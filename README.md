@@ -23,7 +23,8 @@
 * **极简审美**：只有黑金配色，没有花里胡哨的装饰，主打一个“高级感”。
 <img width="2557" height="1291" alt="image" src="https://github.com/user-attachments/assets/d7d31b4c-bf4d-49b2-b922-79813bbddba5" />
 
-<img width="2559" height="1439" alt="image" src="https://github.com/user-attachments/assets/4d691683-242b-4b94-8e6c-ff81dabf0f7d" />
+<img width="2559" height="1294" alt="image" src="https://github.com/user-attachments/assets/d7e4e982-3042-449d-8898-105048aeac1d" />
+
 
 ## 🛠️ 用了什么 (Tech)
 
