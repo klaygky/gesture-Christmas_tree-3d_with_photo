@@ -166,14 +166,17 @@
             z-index: 200; text-align: center;
             display: none; border-radius: 8px; min-width: 200px;
         }
-    </style>
-    #mode-bar,
-    #debug-info {
+
+      /* Hide bottom buttons and bottom text */
+        #mode-bar,
+        #debug-info {
+            display: none !important;
+        }
+        #webcam-wrapper {
         display: none !important;
-    }
-    #webcam-wrapper {
-    display: none !important;
-  }
+      }
+    </style>
+
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap');
