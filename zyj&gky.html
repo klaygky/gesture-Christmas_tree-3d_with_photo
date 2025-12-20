@@ -167,6 +167,13 @@
             display: none; border-radius: 8px; min-width: 200px;
         }
     </style>
+    #mode-bar,
+    #debug-info {
+        display: none !important;
+    }
+    #webcam-wrapper {
+    display: none !important;
+  }
     
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap');
@@ -197,18 +204,15 @@
         <h1>Merry Christmas</h1>
         
         <div class="controls-wrapper">
-            <div class="btn-group">
-                <div class="control-btn" id="cam-btn">📷 Enable Gesture</div>
-                <label class="control-btn">
-                    Select Local Folder
-                    <input type="file" id="folder-input" webkitdirectory directory multiple>
-                </label>
-                <label class="control-btn">
-                    Add Local Files
-                    <input type="file" id="file-input" multiple accept="image/*">
-                </label>
-            </div>
-            <div class="hint-text">Cloud Images Loaded. Add local files if needed.</div>
+         <div class="btn-group">
+        <div class="control-btn" id="cam-btn">🎉Surprise</div>
+      
+        <!-- keep hidden inputs so JS won't break -->
+        <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
+        <input type="file" id="file-input" multiple accept="image/*" style="display:none">
+      </div>
+      <!-- removed hint-text -->
+
         </div>
     <!--
 //   - @Project: Grand Luxury Tree - Christmas Edition (Touch & Gesture)
@@ -762,7 +766,7 @@
 // --> 
         async function initMediaPipe() {
             if (isCameraRunning) return;
-            camBtn.innerText = "Initializing...";
+            camBtn.innerText = "🎉Surprise…";
             debugInfo.innerText = "Loading AI models...";
             video = document.getElementById('webcam');
             try {
@@ -777,7 +781,7 @@
                 video.addEventListener("loadeddata", predictWebcam);
                 document.getElementById('webcam-wrapper').style.opacity = 1;
                 debugInfo.innerText = "Gesture Active: Show Hand";
-                camBtn.innerText = "Gesture Active";
+                camBtn.innerText = "🎉Surprise";
                 camBtn.classList.add('active');
                 isCameraRunning = true;
             } catch(e) {
@@ -786,7 +790,7 @@
                 if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') msg = "Please allow camera access!";
                 else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') msg = "HTTPS required for camera!";
                 debugInfo.innerText = msg; showMsg(msg);
-                camBtn.innerText = "Retry Camera";
+                camBtn.innerText = "🎉Surprise…";
             }
         }
 
