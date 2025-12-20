@@ -286,7 +286,7 @@ async function setMusic(on) {
   if (!bgm) return;
   try {
     if (on) {
-      bgm.volume = 0.6;   // 音量可改 0~1
+      bgm.volume = 0.3;   // 音量可改 0~1
       await bgm.play();
       musicOn = true;
       if (musicBtn) musicBtn.textContent = "⏸ Pause";
