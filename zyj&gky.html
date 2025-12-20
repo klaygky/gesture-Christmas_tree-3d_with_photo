@@ -80,6 +80,25 @@
             transition: opacity 0.5s ease;
         }
 
+
+      
+        /* Bottom Surprise button */
+        #surprise-bar{
+          position: fixed;
+          left: 50%;
+          bottom: calc(24px + env(safe-area-inset-bottom));
+          transform: translateX(-50%);
+          z-index: 30;
+          pointer-events: auto;
+        }
+        #surprise-bar .control-btn{
+          min-width: 160px;
+          font-size: 12px;
+        }
+
+
+
+      
         .btn-group {
             display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
         }
@@ -206,14 +225,16 @@
     <div id="ui-layer">
         <h1>🎄Merry Christmas✨嘟嘟!!!</h1>
         
-        <div class="controls-wrapper">
-         <div class="btn-group">
-        <div class="control-btn" id="cam-btn">🎉Surprise</div>
-      
-        <!-- keep hidden inputs so JS won't break -->
-        <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
-        <input type="file" id="file-input" multiple accept="image/*" style="display:none">
-      </div>
+    </div>  
+
+  <div id="surprise-bar">
+  <div class="control-btn" id="cam-btn">🎉Surprise</div>
+
+  <!-- 保留隐藏 input：否则 JS 的 addEventListener 会报错 -->
+  <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
+  <input type="file" id="file-input" multiple accept="image/*" style="display:none">
+  </div>
+
       <!-- removed hint-text -->
 
         </div>
