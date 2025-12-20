@@ -216,21 +216,23 @@
         }
     </script>
 </head>
-<body>
 
-    <div id="loader">
-        <div class="spinner"></div>
-        <div class="loader-text">Loading Memories</div>
-    </div>
-    
-    <div id="msg-box"></div>
+  <div id="ui-layer">
+  <h1>🎄Merry Christmas✨嘟嘟!!!</h1>
+</div>
 
-    <div id="canvas-container"></div>
+<div id="surprise-bar">
+  <div class="control-btn" id="cam-btn">🎉Surprise</div>
+  <div class="control-btn" id="music-btn">🎵Music</div>
 
-    <div id="ui-layer">
-        <h1>🎄Merry Christmas✨嘟嘟!!!</h1>
-        
-    </div>  
+  <!-- 保留隐藏 input：否则 JS 的 addEventListener 会报错 -->
+  <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
+  <input type="file" id="file-input" multiple accept="image/*" style="display:none">
+</div>
+
+<!-- 背景音乐 -->
+<audio id="bgm" src="./music/memories.mp3" preload="auto" loop></audio>
+
 
   <div id="surprise-bar">
     <div class="control-btn" id="cam-btn">🎉Surprise</div>
@@ -273,40 +275,41 @@
     </div>
     <div id="debug-info">Drag to rotate • Tap photo to view</div>
 
-    <script type="module">
-    const camBtn = document.getElementById('cam-btn');
-    let isCameraRunning = false;
+  <script type="module">
+  import * as THREE from 'three';
+  import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+  import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+  import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+  import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+  import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
-    // ===== Music =====
-const bgm = document.getElementById('bgm');
-const musicBtn = document.getElementById('music-btn');
-let musicOn = false;
+  // ===== DOM refs（放在 import 后面）=====
+  const camBtn = document.getElementById('cam-btn');
+  const bgm = document.getElementById('bgm');
+  const musicBtn = document.getElementById('music-btn');
 
-async function setMusic(on) {
-  if (!bgm) return;
-  try {
-    if (on) {
-      bgm.volume = 0.3;   // 音量可改 0~1
-      await bgm.play();
-      musicOn = true;
-      if (musicBtn) musicBtn.textContent = "⏸ Pause";
-    } else {
-      bgm.pause();
-      musicOn = false;
-      if (musicBtn) musicBtn.textContent = "🎵Music";
+  let isCameraRunning = false;
+
+  // ===== Music =====
+  let musicOn = false;
+
+  async function setMusic(on) {
+    if (!bgm) return;
+    try {
+      if (on) {
+        bgm.volume = 0.3; // 0~1
+        await bgm.play();
+        musicOn = true;
+        if (musicBtn) musicBtn.textContent = "⏸ Pause";
+      } else {
+        bgm.pause();
+        musicOn = false;
+        if (musicBtn) musicBtn.textContent = "🎵Music";
+      }
+    } catch (e) {
+      console.warn("Music play failed:", e);
     }
-  } catch (e) {
-    console.warn("Music play failed:", e);
-    // 一般是文件路径不对 or 浏览器限制没交互
   }
-}
-
-        import * as THREE from 'three';
-        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-        import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'; 
-        import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
         // --- 核心配置 ---
         const CONFIG = {
@@ -362,9 +365,6 @@ async function setMusic(on) {
         let raycaster = new THREE.Raycaster();
         let mouse = new THREE.Vector2();
         
-        const debugInfo = document.getElementById('debug-info');
-        const camBtn = document.getElementById('cam-btn');
-        let isCameraRunning = false;
 
 //   - @Project: Grand Luxury Tree - Christmas Edition (Touch & Gesture)
 //   - @Author: wp/electronicminer qq:2013248845
