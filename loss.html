@@ -266,14 +266,12 @@
       },
       camera: { z: 50 },
       preload: {
-        autoScanLocal: false,
-        useCloudImages: true,
-        cloudImageUrls: [
-          // 你想固定展示照片：把 GitHub raw 图片链接放这里（逗号分隔）
-          // "https://...../xxx.jpg",
-        ],
+        autoScanLocal: true,
+        useCloudImages: false,
+        cloudImageUrls: [],
         scanCount: 200,
       }
+
     };
 
     const STATE = {
@@ -747,15 +745,9 @@
 
       if (CONFIG.preload.autoScanLocal) {
         for (let i = 1; i <= CONFIG.preload.scanCount; i++) {
-          const pathJpg = `./images/01`;
-          const pathPng = `./images/02`;
-          const pathJpg = `./images/03`;
-          const pathPng = `./images/04`;
-          const pathJpg = `./images/05`;
-          const pathPng = `./images/06`;
-          const pathJpg = `./images/07`;
-          const pathPng = `./images/08`;
-          const pathPng = `./images/09`;
+        const name = String(i).padStart(2, "0");
+        const pathJpg = `./images/${name}.jpg`;
+        const pathPng = `./images/${name}.png`;
           loader.load(pathJpg, (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); }, undefined, () => {
             loader.load(pathPng, (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); }, undefined, () => { });
           });
