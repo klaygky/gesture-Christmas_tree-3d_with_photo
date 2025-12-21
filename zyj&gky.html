@@ -9,45 +9,70 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+
+  <!-- ✅ iPhone Safari 必须加 viewport-fit=cover 才能正确处理刘海/安全区 -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+
   <title>🎄 Merry Christmas</title>
 
   <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ✅ iPhone Safari 的 100vh 不稳定：用 JS 写 --vh 来替代 */
+    :root { --vh: 1vh; }
+
     body {
       margin: 0;
       overflow: hidden;
+      height: calc(var(--vh) * 100);
+
       background: radial-gradient(circle at center, #0f2027 0%, #203a43 50%, #2c5364 100%);
       background-color: #050d1a;
       font-family: 'Times New Roman', serif;
+
       touch-action: none;
       user-select: none;
       -webkit-user-select: none;
     }
 
+    /* 兼容支持动态视口单位的新浏览器（更准） */
+    @supports (height: 100dvh) {
+      body { height: 100dvh; }
+    }
+
+    /* ✅ canvas 容器用 fixed + 动态高度，iPhone 不会被地址栏挤压 */
     #canvas-container {
-      width: 100vw;
-      height: 100vh;
-      position: absolute;
-      top: 0;
-      left: 0;
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: calc(var(--vh) * 100);
       z-index: 1;
       cursor: grab;
+      -webkit-tap-highlight-color: transparent;
     }
     #canvas-container:active { cursor: grabbing; }
 
+    @supports (height: 100dvh) {
+      #canvas-container { height: 100dvh; }
+    }
+
     /* UI Overlay (只保留标题) */
     #ui-layer {
-      position: absolute;
-      top: 0; left: 0;
-      width: 100%; height: 100%;
+      position: fixed;
+      inset: 0;
       z-index: 10;
       pointer-events: none;
+
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding-top: 40px;
+
+      padding-top: calc(40px + env(safe-area-inset-top));
       box-sizing: border-box;
-      transition: opacity 0.5s ease;
     }
 
     h1 {
@@ -63,21 +88,24 @@
       font-family: 'Cinzel', 'Times New Roman', serif;
       opacity: 0.95;
       text-align: center;
-      pointer-events: none;
     }
     @media (min-width: 768px) { h1 { font-size: 56px; } }
 
     /* Loading */
     #loader {
-      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      position: fixed;
+      inset: 0;
       background: #050d1a;
       z-index: 100;
+
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
+
       transition: opacity 0.8s ease-out;
     }
+
     .loader-text {
       color: #d4af37;
       font-size: 14px;
@@ -86,6 +114,7 @@
       text-transform: uppercase;
       font-weight: 100;
     }
+
     .spinner {
       width: 40px;
       height: 40px;
@@ -94,11 +123,12 @@
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }
+
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
     /* Message Box */
     #msg-box {
-      position: absolute;
+      position: fixed;
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
@@ -113,54 +143,67 @@
       min-width: 200px;
     }
 
-    /* Bottom bar */
+    /* Bottom bar（适配 iPhone 安全区） */
     #surprise-bar {
       position: fixed;
       left: 50%;
-      bottom: calc(24px + env(safe-area-inset-bottom));
+      bottom: calc(18px + env(safe-area-inset-bottom));
       transform: translateX(-50%);
       z-index: 30;
       pointer-events: auto;
+
+      width: min(520px, calc(100% - 24px));
       display: flex;
       gap: 12px;
       align-items: center;
+      justify-content: center;
     }
 
     .control-btn {
+      flex: 1;
+      min-width: 0;
+
       background: rgba(20, 20, 20, 0.6);
       border: 1px solid rgba(212, 175, 55, 0.4);
       color: #d4af37;
-      padding: 10px 20px;
+
+      padding: 12px 14px;
       cursor: pointer;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-size: 11px;
+
+      /* ✅ iPhone 上别强制 uppercase，否则 “PAUSE” 会变得很大很怪 */
+      text-transform: none;
+      letter-spacing: 1px;
+      font-size: 14px;
+
       transition: all 0.25s;
       display: flex;
       align-items: center;
       justify-content: center;
-      backdrop-filter: blur(5px);
-      min-width: 150px;
-      border-radius: 6px;
+
+      backdrop-filter: blur(6px);
+      border-radius: 10px;
+
+      -webkit-tap-highlight-color: transparent;
     }
+
     .control-btn:hover {
       background: #d4af37;
       color: #000;
       box-shadow: 0 0 20px rgba(212, 175, 55, 0.35);
     }
+
     .control-btn.active {
       background: rgba(212, 175, 55, 0.85);
       color: #000;
       box-shadow: 0 0 15px rgba(212, 175, 55, 0.45);
     }
 
-    /* 你要求去掉：摄像头预览 + 底部提示文字（仍保留DOM，避免代码报错） */
+    /* 你要求去掉：摄像头预览 + 底部提示文字（仍保留 DOM，避免 JS 找不到元素） */
     #webcam-wrapper,
     #debug-info {
       display: none !important;
     }
 
-    /* 隐藏上传输入（保留节点避免JS报错） */
     input[type="file"] { display: none; }
   </style>
 
@@ -196,15 +239,15 @@
     <div class="control-btn" id="cam-btn">🎉Surprise</div>
     <div class="control-btn" id="music-btn">🎵Music</div>
 
-    <!-- 保留隐藏 input：防止原代码 addEventListener 报错 -->
+    <!-- 保留隐藏 input：防止原逻辑 addEventListener 报错 -->
     <input type="file" id="folder-input" webkitdirectory directory multiple />
     <input type="file" id="file-input" multiple accept="image/*" />
   </div>
 
-  <!-- 背景音乐（你仓库是 music/memories.mp3） -->
+  <!-- 背景音乐（仓库：music/memories.mp3） -->
   <audio id="bgm" src="./music/memories.mp3" preload="auto" loop></audio>
 
-  <!-- 仍保留DOM（但CSS隐藏），以免 MediaPipe 相关代码取不到元素 -->
+  <!-- 保留 DOM 但隐藏，避免 MediaPipe 代码取不到 -->
   <div id="webcam-wrapper">
     <video id="webcam" autoplay playsinline webkit-playsinline></video>
   </div>
@@ -217,6 +260,12 @@
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+
+    // ✅ iPhone：动态设置 --vh，避免 100vh 被地址栏影响
+    function applyVh() {
+      const vh = window.innerHeight * 0.01;
+      document.documentElement.style.setProperty('--vh', `${vh}px`);
+    }
 
     // ===== DOM =====
     const debugInfo = document.getElementById('debug-info');
@@ -235,7 +284,7 @@
       try {
         if (on) {
           bgm.volume = 0.3;
-          await bgm.play();
+          await bgm.play(); // iPhone 需要用户点击触发，这里由按钮点击触发 ✅
           musicOn = true;
           if (musicBtn) musicBtn.textContent = "⏸ Pause";
         } else {
@@ -269,8 +318,8 @@
         autoScanLocal: false,
         useCloudImages: true,
         cloudImageUrls: [
-          // 你想固定展示照片：把 GitHub raw 图片链接放这里（逗号分隔）
-          // "https://...../xxx.jpg",
+          // 在这里放你要展示的图片链接（raw 链接）
+          // "https://.../1.jpg",
         ],
         scanCount: 200,
       }
@@ -278,7 +327,6 @@
 
     const STATE = {
       mode: 'TREE',
-      focusIndex: -1,
       focusTarget: null,
       hand: { detected: false, x: 0, y: 0 },
       rotation: { x: 0, y: 0 },
@@ -298,18 +346,24 @@
 
     let isCameraRunning = false;
 
-    window.setMode = (mode) => {
-      if (mode === 'FOCUS_RANDOM') {
-        STATE.mode = 'FOCUS';
-        const photos = particleSystem.filter(p => p.type === 'PHOTO');
-        if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random() * photos.length)].mesh;
-      } else {
-        STATE.mode = mode;
-        if (mode === 'TREE') STATE.focusTarget = null;
-      }
-    };
+    function resizeRenderer() {
+      const container = document.getElementById('canvas-container');
+      const rect = container.getBoundingClientRect();
+      const w = Math.max(1, rect.width);
+      const h = Math.max(1, rect.height);
+
+      camera.aspect = w / h;
+
+      // ✅ 竖屏时拉远一点，避免树太大被裁切
+      camera.position.z = (camera.aspect < 0.75) ? 62 : 50;
+
+      camera.updateProjectionMatrix();
+      renderer.setSize(w, h, false);
+      composer.setSize(w, h);
+    }
 
     async function init() {
+      applyVh();
       initThree();
       setupEnvironment();
       setupLights();
@@ -321,6 +375,9 @@
       setupPostProcessing();
       setupEvents();
       setupTouchAndClick();
+
+      // ✅ 首次也按真实容器尺寸缩放
+      resizeRenderer();
 
       const loader = document.getElementById('loader');
       loader.style.opacity = 0;
@@ -335,14 +392,14 @@
       scene.background = new THREE.Color(CONFIG.colors.bg);
       scene.fog = new THREE.FogExp2(CONFIG.colors.fog, 0.015);
 
-      camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
+      camera = new THREE.PerspectiveCamera(42, 1, 0.1, 1000);
       camera.position.set(0, 2, CONFIG.camera.z);
 
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
-      renderer.setSize(window.innerWidth, window.innerHeight);
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
       renderer.toneMapping = THREE.ReinhardToneMapping;
       renderer.toneMappingExposure = 2.2;
+
       container.appendChild(renderer.domElement);
 
       mainGroup = new THREE.Group();
@@ -355,8 +412,7 @@
     }
 
     function setupLights() {
-      const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-      scene.add(ambient);
+      scene.add(new THREE.AmbientLight(0xffffff, 0.6));
 
       const innerLight = new THREE.PointLight(0xffaa00, 2, 20);
       innerLight.position.set(0, 5, 0);
@@ -436,6 +492,7 @@
         );
         velocities.push(Math.random() * 0.2 + 0.1, Math.random() * 0.05);
       }
+
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
       geometry.setAttribute('userData', new THREE.Float32BufferAttribute(velocities, 2));
 
@@ -471,6 +528,7 @@
           positions[i * 3 + 2] = THREE.MathUtils.randFloatSpread(60);
         }
       }
+
       snowSystem.geometry.attributes.position.needsUpdate = true;
     }
 
@@ -706,8 +764,7 @@
       group.add(photo);
 
       frame.scale.set(width / 1.2, height / 1.2, 1);
-      const s = 0.8;
-      group.scale.set(s, s, s);
+      group.scale.set(0.8, 0.8, 0.8);
 
       photoMeshGroup.add(group);
       particleSystem.push(new Particle(group, 'PHOTO', false));
@@ -744,19 +801,8 @@
           );
         });
       }
-
-      if (CONFIG.preload.autoScanLocal) {
-        for (let i = 1; i <= CONFIG.preload.scanCount; i++) {
-          const pathJpg = `./images/(${i}).jpg`;
-          const pathPng = `./images/(${i}).png`;
-          loader.load(pathJpg, (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); }, undefined, () => {
-            loader.load(pathPng, (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); }, undefined, () => { });
-          });
-        }
-      }
     }
 
-    // --- MEDIAPIPE ---
     function showMsg(txt) {
       const box = document.getElementById('msg-box');
       if (!box) return;
@@ -792,7 +838,6 @@
         video.srcObject = stream;
         video.addEventListener("loadeddata", predictWebcam);
 
-        setDebug("Gesture Active");
         camBtn.textContent = "🎉Surprise";
         camBtn.classList.add('active');
         isCameraRunning = true;
@@ -801,7 +846,6 @@
         let msg = "Camera Error: " + e.name;
         if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') msg = "请允许摄像头权限～";
         else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') msg = "需要 HTTPS 才能用摄像头";
-        setDebug(msg);
         showMsg(msg);
         camBtn.textContent = "🎉Surprise";
       }
@@ -855,11 +899,16 @@
     }
 
     function setupEvents() {
+      // ✅ iPhone：resize/orientationchange 都要处理
       window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        composer.setSize(window.innerWidth, window.innerHeight);
+        applyVh();
+        resizeRenderer();
+      });
+      window.addEventListener('orientationchange', () => {
+        setTimeout(() => {
+          applyVh();
+          resizeRenderer();
+        }, 250);
       });
 
       if (fileInput) fileInput.addEventListener('change', handleImageUpload);
@@ -926,11 +975,9 @@
         if (clickedPhoto) {
           STATE.mode = 'FOCUS';
           STATE.focusTarget = clickedPhoto.mesh;
-        } else {
-          if (STATE.mode === 'FOCUS') {
-            STATE.mode = 'TREE';
-            STATE.focusTarget = null;
-          }
+        } else if (STATE.mode === 'FOCUS') {
+          STATE.mode = 'TREE';
+          STATE.focusTarget = null;
         }
       });
     }
@@ -948,9 +995,7 @@
         } else {
           STATE.rotation.y += 0.3 * dt;
         }
-      } else if (STATE.touch.active) {
-        // 触摸拖动时 rotation 已在 pointermove 更新
-      } else {
+      } else if (!STATE.touch.active) {
         if (STATE.mode === 'TREE') {
           STATE.rotation.y += 0.3 * dt;
           STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt;
