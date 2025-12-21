@@ -1,1 +1,1472 @@
+<!--
+  - @Project: Grand Luxury Tree - Christmas Edition (Cloud Image Support)
+  - @Author: wp/electronicminer (Modified for Cloud Support)
+  - @Date: 2025-12-07
+  - @Description: 3D Christmas tree with customizable Cloud Image loading.
+  - 如需使用或分发，请务必保留此作者声明。
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>🎄 Merry Christmas</title>
+
+  <style>
+    :root{
+      --ui-gold: rgba(210, 233, 255, 0.92);
+      --ui-ice: rgba(180, 225, 255, 0.70);
+      --ui-stroke: rgba(210, 233, 255, 0.22);
+      --ui-bg: rgba(10, 18, 35, 0.35);
+    }
+
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: radial-gradient(1200px 900px at 50% 35%, rgba(95, 190, 255, 0.16), rgba(10, 18, 35, 0.0) 55%),
+                  radial-gradient(900px 700px at 20% 65%, rgba(150, 120, 255, 0.10), rgba(10, 18, 35, 0.0) 60%),
+                  linear-gradient(180deg, #040816 0%, #040a18 45%, #030611 100%);
+      background-color: #030611;
+      font-family: 'Cinzel', 'Times New Roman', serif;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body::before{
+      content:"";
+      position: fixed;
+      inset:0;
+      background-image:
+        url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.18'/%3E%3C/svg%3E");
+      mix-blend-mode: overlay;
+      opacity: 0.14;
+      pointer-events:none;
+    }
+    body::after{
+      content:"";
+      position: fixed;
+      inset:0;
+      background: radial-gradient(1200px 900px at 50% 40%, rgba(0,0,0,0) 35%, rgba(0,0,0,0.55) 100%);
+      pointer-events:none;
+    }
+
+    #canvas-container {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+      cursor: grab;
+    }
+    #canvas-container:active { cursor: grabbing; }
+
+    #ui-layer {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: calc(22px + env(safe-area-inset-top));
+      box-sizing: border-box;
+      transition: opacity 0.5s ease;
+    }
+
+    h1 {
+      margin: 0;
+      font-weight: 600;
+      letter-spacing: 3px;
+      font-size: 7.2vw;
+      text-align: center;
+      opacity: 0.96;
+      background: linear-gradient(180deg, #ffffff 0%, #d6f0ff 35%, #8bd3ff 70%, #ffffff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      text-shadow:
+        0 0 26px rgba(140, 210, 255, 0.22),
+        0 0 70px rgba(120, 190, 255, 0.12);
+      filter: drop-shadow(0 10px 18px rgba(0,0,0,0.25));
+    }
+    @media (min-width: 768px) { h1 { font-size: 52px; } }
+
+    #loader {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: radial-gradient(700px 520px at 50% 45%, rgba(130, 210, 255, 0.10), rgba(3, 6, 17, 1) 70%);
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.8s ease-out;
+    }
+    .loader-text {
+      color: rgba(210, 233, 255, 0.9);
+      font-size: 12px;
+      letter-spacing: 4px;
+      margin-top: 18px;
+      text-transform: uppercase;
+      font-weight: 300;
+    }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 1px solid rgba(170, 220, 255, 0.22);
+      border-top: 1px solid rgba(210, 233, 255, 0.95);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      box-shadow: 0 0 25px rgba(140, 210, 255, 0.18);
+    }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+    #msg-box {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(10, 18, 35, 0.78);
+      border: 1px solid rgba(210, 233, 255, 0.28);
+      padding: 16px 18px;
+      color: rgba(220, 245, 255, 0.92);
+      z-index: 200;
+      text-align: center;
+      display: none;
+      border-radius: 14px;
+      min-width: 220px;
+      backdrop-filter: blur(10px);
+      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+    }
+
+    #surprise-bar {
+      position: fixed;
+      left: 50%;
+      bottom: calc(18px + env(safe-area-inset-bottom));
+      transform: translateX(-50%);
+      z-index: 30;
+      pointer-events: auto;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+
+    .control-btn {
+      background: var(--ui-bg);
+      border: 1px solid var(--ui-stroke);
+      color: var(--ui-gold);
+      padding: 11px 18px;
+      cursor: pointer;
+      letter-spacing: 2px;
+      font-size: 11px;
+      transition: transform 0.18s ease, background 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(10px);
+      min-width: 150px;
+      border-radius: 999px;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+    }
+    .control-btn:hover {
+      transform: translateY(-1px);
+      border-color: rgba(210, 233, 255, 0.42);
+      box-shadow: 0 16px 36px rgba(0,0,0,0.34), 0 0 22px rgba(140, 210, 255, 0.12);
+    }
+    .control-btn.active {
+      background: rgba(180, 225, 255, 0.22);
+      border-color: rgba(210, 233, 255, 0.55);
+      color: rgba(235, 252, 255, 0.98);
+      box-shadow: 0 18px 40px rgba(0,0,0,0.35), 0 0 26px rgba(140, 210, 255, 0.16);
+    }
+
+    #webcam-wrapper,
+    #debug-info {
+      display: none !important;
+    }
+
+    input[type="file"] { display: none; }
+  </style>
+
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&display=swap');
+  </style>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+        "@mediapipe/tasks-vision": "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/+esm"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <div id="loader">
+    <div class="spinner"></div>
+    <div class="loader-text">Loading Memories</div>
+  </div>
+
+  <div id="msg-box"></div>
+  <div id="canvas-container"></div>
+
+  <div id="ui-layer">
+    <h1>🎄 Merry Christmas ✨ 嘟嘟!!!</h1>
+  </div>
+
+  <div id="surprise-bar">
+    <div class="control-btn" id="cam-btn">🎉Surprise</div>
+    <div class="control-btn" id="music-btn">🎵Music</div>
+    <input type="file" id="folder-input" webkitdirectory directory multiple />
+    <input type="file" id="file-input" multiple accept="image/*" />
+  </div>
+
+  <audio id="bgm" src="./music/memories.mp3" preload="auto" loop></audio>
+
+  <div id="webcam-wrapper">
+    <video id="webcam" autoplay playsinline webkit-playsinline></video>
+  </div>
+  <div id="debug-info"></div>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
+
+    // ===== DOM =====
+    const debugInfo = document.getElementById('debug-info');
+    const camBtn = document.getElementById('cam-btn');
+    const bgm = document.getElementById('bgm');
+    const musicBtn = document.getElementById('music-btn');
+    const fileInput = document.getElementById('file-input');
+    const folderInput = document.getElementById('folder-input');
+    function setDebug(t) { if (debugInfo) debugInfo.textContent = t; }
+
+    // ===== Music =====
+    let musicOn = false;
+    async function setMusic(on) {
+      if (!bgm) return;
+      try {
+        if (on) {
+          bgm.volume = 0.28;
+          await bgm.play();
+          musicOn = true;
+          if (musicBtn) musicBtn.textContent = "⏸ Pause";
+        } else {
+          bgm.pause();
+          musicOn = false;
+          if (musicBtn) musicBtn.textContent = "🎵Music";
+        }
+      } catch (e) {
+        console.warn("Music play failed:", e);
+      }
+    }
+
+    const isMobile = Math.min(window.innerWidth, window.innerHeight) < 768;
+    const perfScale = isMobile ? 0.65 : 1.0;
+
+    // --- 核心配置（冰蓝高级配色） ---
+    const CONFIG = {
+      colors: {
+        bg: 0x030611,
+        fog: 0x050a18,
+        iceBlue: 0x8bd3ff,
+        midBlue: 0x2a86ff,
+        silver: 0xe9f4ff,
+        auroraViolet: 0xb9a2ff,
+        warmGold: 0xffe3a0,
+      },
+      particles: {
+        count: Math.floor(1400 * perfScale),
+        dustCount: Math.floor(1800 * perfScale),
+        snowCount: Math.floor(1100 * perfScale),
+        treeHeight: 24,
+        treeRadius: 8
+      },
+      // 星空 + 星系（可按需调）
+      cosmos: {
+        starCount: Math.floor(2600 * perfScale),
+        galaxyCount: Math.floor(6800 * perfScale),
+        coreCount: Math.floor(900 * perfScale),
+        galaxyRadius: 52,
+        galaxyInnerCut: 10, // 中心留空，避免把树淹没
+      },
+      camera: { z: 50 },
+      preload: {
+        autoScanLocal: true,
+        useCloudImages: false,
+        cloudImageUrls: [],
+        scanCount: 200,
+      }
+    };
+
+    const STATE = {
+      mode: 'TREE',
+      focusIndex: -1,
+      focusTarget: null,
+      hand: { detected: false, x: 0, y: 0 },
+      rotation: { x: 0, y: 0 },
+      touch: { active: false, startX: 0, startY: 0, lastX: 0, lastY: 0 }
+    };
+
+    let scene, camera, renderer, composer;
+    let mainGroup;
+    let clock = new THREE.Clock();
+    let particleSystem = [];
+    let photoMeshGroup = new THREE.Group();
+    let handLandmarker, video;
+    let caneTexture;
+    let snowSystem;
+    let raycaster = new THREE.Raycaster();
+    let mouse = new THREE.Vector2();
+    let isCameraRunning = false;
+
+    // ===== 星空/星系对象 =====
+    let starfieldPoints, galaxyGroup, galaxyPoints, galaxyCorePoints, galaxyDiscMesh;
+    let starsMat, galaxyMat, coreMat;
+    let uTime = 0;
+
+    // 共享：点精灵 shader（支持闪烁）
+    function makeTwinklePointsMaterial({
+      baseSize = 2.0,
+      opacity = 0.9,
+      twinkleStrength = 0.7,
+      timeSpeed = 1.0
+    } = {}) {
+      return new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        uniforms: {
+          uTime: { value: 0 },
+          uOpacity: { value: opacity },
+          uBaseSize: { value: baseSize },
+          uTwinkleStrength: { value: twinkleStrength },
+          uTimeSpeed: { value: timeSpeed }
+        },
+        vertexShader: `
+          precision highp float;
+          attribute float aScale;
+          attribute float aPhase;
+          attribute float aBright;
+          varying vec3 vColor;
+          varying float vAlpha;
+
+          uniform float uTime;
+          uniform float uBaseSize;
+          uniform float uTwinkleStrength;
+          uniform float uTimeSpeed;
+
+          void main() {
+            vColor = color;
+            float t = uTime * uTimeSpeed;
+
+            // twinkle: 0~1
+            float tw = 0.5 + 0.5 * sin(t * 1.25 + aPhase);
+            float tw2 = 0.5 + 0.5 * sin(t * 2.10 + aPhase * 1.7);
+            float twinkle = mix(1.0, (tw * 0.65 + tw2 * 0.35), uTwinkleStrength);
+
+            vAlpha = twinkle * aBright;
+
+            vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+            gl_Position = projectionMatrix * mvPosition;
+
+            // perspective size
+            float size = uBaseSize * aScale * (320.0 / max(1.0, -mvPosition.z));
+            gl_PointSize = clamp(size, 1.0, 18.0);
+          }
+        `,
+        fragmentShader: `
+          precision highp float;
+          varying vec3 vColor;
+          varying float vAlpha;
+          uniform float uOpacity;
+
+          void main() {
+            vec2 uv = gl_PointCoord - vec2(0.5);
+            float d = length(uv);
+
+            // soft circle + tiny core
+            float halo = smoothstep(0.5, 0.0, d);
+            float core = smoothstep(0.18, 0.0, d);
+
+            float a = (halo * 0.75 + core * 0.35) * vAlpha * uOpacity;
+            gl_FragColor = vec4(vColor, a);
+          }
+        `
+      });
+    }
+
+    window.setMode = (mode) => {
+      if (mode === 'FOCUS_RANDOM') {
+        STATE.mode = 'FOCUS';
+        const photos = particleSystem.filter(p => p.type === 'PHOTO');
+        if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random() * photos.length)].mesh;
+      } else {
+        STATE.mode = mode;
+        if (mode === 'TREE') STATE.focusTarget = null;
+      }
+    };
+
+    async function init() {
+      initThree();
+      setupEnvironment();
+      setupLights();
+
+      // 先放宇宙背景：星空 + 星系（树在中心）
+      createStarfield();
+      createGalaxy();
+
+      createTextures();
+      createFloor();
+      createParticles();
+      createGarland();
+      createDust();
+      createSnow();
+      loadPredefinedImages();
+      setupPostProcessing();
+      setupEvents();
+      setupTouchAndClick();
+
+      const loader = document.getElementById('loader');
+      loader.style.opacity = 0;
+      setTimeout(() => loader.remove(), 800);
+
+      animate();
+    }
+
+    function initThree() {
+      const container = document.getElementById('canvas-container');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(CONFIG.colors.bg);
+      scene.fog = new THREE.FogExp2(CONFIG.colors.fog, 0.016);
+
+      camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1200);
+      camera.position.set(0, 2, CONFIG.camera.z);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+      renderer.outputColorSpace = THREE.SRGBColorSpace;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.6;
+
+      container.appendChild(renderer.domElement);
+
+      mainGroup = new THREE.Group();
+      scene.add(mainGroup);
+    }
+
+    function setupEnvironment() {
+      const pmremGenerator = new THREE.PMREMGenerator(renderer);
+      scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+    }
+
+    function setupLights() {
+      const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+      scene.add(ambient);
+
+      const innerLight = new THREE.PointLight(0x9adfff, 2.3, 28);
+      innerLight.position.set(0, 5, 0);
+      mainGroup.add(innerLight);
+
+      const key = new THREE.SpotLight(0xcfefff, 1300);
+      key.position.set(30, 45, 38);
+      key.angle = 0.52;
+      key.penumbra = 0.55;
+      scene.add(key);
+
+      const rim = new THREE.SpotLight(0xb9a2ff, 650);
+      rim.position.set(-32, 22, -30);
+      rim.angle = 0.6;
+      rim.penumbra = 0.7;
+      scene.add(rim);
+
+      const fill = new THREE.DirectionalLight(0xeaf6ff, 0.75);
+      fill.position.set(0, 8, 50);
+      scene.add(fill);
+    }
+
+    // ==========================
+    // 星空（第二个效果）：远景星星闪烁
+    // ==========================
+    function createStarfield() {
+      const STAR_COUNT = CONFIG.cosmos.starCount;
+
+      const positions = new Float32Array(STAR_COUNT * 3);
+      const colors = new Float32Array(STAR_COUNT * 3);
+      const scales = new Float32Array(STAR_COUNT);
+      const phases = new Float32Array(STAR_COUNT);
+      const brights = new Float32Array(STAR_COUNT);
+
+      const rMin = 120;
+      const rMax = 260;
+
+      for (let i = 0; i < STAR_COUNT; i++) {
+        // 在大球壳上均匀分布
+        const u = Math.random();
+        const v = Math.random();
+        const theta = 2 * Math.PI * u;
+        const phi = Math.acos(2 * v - 1);
+
+        const r = rMin + Math.random() * (rMax - rMin);
+        const x = r * Math.sin(phi) * Math.cos(theta);
+        const y = r * Math.cos(phi) * 0.85; // 稍微压扁一点更像天空穹顶
+        const z = r * Math.sin(phi) * Math.sin(theta);
+
+        positions[i * 3 + 0] = x;
+        positions[i * 3 + 1] = y;
+        positions[i * 3 + 2] = z;
+
+        // 冷白/淡蓝/淡紫随机
+        const pick = Math.random();
+        let c;
+        if (pick < 0.72) c = new THREE.Color(0xeaf6ff);
+        else if (pick < 0.92) c = new THREE.Color(0x9adfff);
+        else c = new THREE.Color(0xb9a2ff);
+
+        // 轻微色差
+        c.offsetHSL((Math.random() - 0.5) * 0.03, (Math.random() - 0.5) * 0.05, (Math.random() - 0.5) * 0.06);
+
+        colors[i * 3 + 0] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+
+        scales[i] = 0.8 + Math.random() * 1.9;
+        phases[i] = Math.random() * Math.PI * 2;
+        brights[i] = 0.55 + Math.random() * 0.75;
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geo.setAttribute('aScale', new THREE.BufferAttribute(scales, 1));
+      geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+      geo.setAttribute('aBright', new THREE.BufferAttribute(brights, 1));
+
+      starsMat = makeTwinklePointsMaterial({
+        baseSize: isMobile ? 2.0 : 2.6,
+        opacity: 0.72,
+        twinkleStrength: 0.85,
+        timeSpeed: 0.9
+      });
+
+      starfieldPoints = new THREE.Points(geo, starsMat);
+      starfieldPoints.frustumCulled = false;
+      scene.add(starfieldPoints);
+    }
+
+    // ==========================
+    // 星系：圣诞树在星系中心（银河盘 + 核心辉光 + 螺旋臂星尘）
+    // ==========================
+    function createGalaxy() {
+      galaxyGroup = new THREE.Group();
+      scene.add(galaxyGroup);
+
+      // 1) 先做一个“朦胧星云盘”（Mesh），让星系更像“银河”
+      const discCanvas = document.createElement('canvas');
+      discCanvas.width = 512;
+      discCanvas.height = 512;
+      const ctx = discCanvas.getContext('2d');
+
+      const grd = ctx.createRadialGradient(256, 256, 20, 256, 256, 240);
+      grd.addColorStop(0.0, 'rgba(210, 245, 255, 0.35)');
+      grd.addColorStop(0.25, 'rgba(140, 210, 255, 0.18)');
+      grd.addColorStop(0.55, 'rgba(185, 162, 255, 0.10)');
+      grd.addColorStop(0.85, 'rgba(120, 180, 255, 0.04)');
+      grd.addColorStop(1.0, 'rgba(0, 0, 0, 0.0)');
+
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(256, 256, 250, 0, Math.PI * 2);
+      ctx.fill();
+
+      // 加一点旋涡纹理（很克制）
+      ctx.globalCompositeOperation = 'overlay';
+      ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+      ctx.lineWidth = 1.2;
+      for (let k = 0; k < 70; k++) {
+        const a0 = Math.random() * Math.PI * 2;
+        const r0 = 40 + Math.random() * 200;
+        ctx.beginPath();
+        for (let t = 0; t < 80; t++) {
+          const tt = t / 79;
+          const a = a0 + tt * 2.2 + r0 * 0.002;
+          const r = r0 + tt * 25;
+          const x = 256 + Math.cos(a) * r;
+          const y = 256 + Math.sin(a) * r;
+          if (t === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+      ctx.globalCompositeOperation = 'source-over';
+
+      const discTex = new THREE.CanvasTexture(discCanvas);
+      discTex.colorSpace = THREE.SRGBColorSpace;
+
+      const discGeo = new THREE.RingGeometry(8, CONFIG.cosmos.galaxyRadius * 0.98, 96, 1);
+      const discMat = new THREE.MeshBasicMaterial({
+        map: discTex,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      });
+      galaxyDiscMesh = new THREE.Mesh(discGeo, discMat);
+      galaxyDiscMesh.rotation.x = -Math.PI / 2 + 0.15; // 微倾斜，让盘更立体
+      galaxyDiscMesh.position.y = -2.0;
+      galaxyGroup.add(galaxyDiscMesh);
+
+      // 2) 星系盘点（螺旋臂）
+      const GALAXY_COUNT = CONFIG.cosmos.galaxyCount;
+      const positions = new Float32Array(GALAXY_COUNT * 3);
+      const colors = new Float32Array(GALAXY_COUNT * 3);
+      const scales = new Float32Array(GALAXY_COUNT);
+      const phases = new Float32Array(GALAXY_COUNT);
+      const brights = new Float32Array(GALAXY_COUNT);
+
+      const R = CONFIG.cosmos.galaxyRadius;
+      const innerCut = CONFIG.cosmos.galaxyInnerCut;
+      const arms = 4;                 // 螺旋臂数量
+      const spin = 1.9;               // 旋臂扭曲程度
+      const thickness = 2.4;          // 盘厚度
+      const tilt = 0.16;              // 盘倾角
+
+      for (let i = 0; i < GALAXY_COUNT; i++) {
+        // 半径：更集中在中心（sqrt 分布）
+        const rr = Math.sqrt(Math.random());
+        const r = innerCut + rr * (R - innerCut);
+
+        // 选一个臂
+        const arm = Math.floor(Math.random() * arms);
+        const armOffset = (arm / arms) * Math.PI * 2;
+
+        // 螺旋：角度随半径推进
+        const baseAngle = r * 0.22 * spin + armOffset;
+        const randSpread = (Math.random() - 0.5) * (0.65 + (r / R) * 1.2);
+        const angle = baseAngle + randSpread;
+
+        // 位置（盘）
+        let x = Math.cos(angle) * r;
+        let z = Math.sin(angle) * r;
+
+        // 盘厚度（中心更厚，外盘更薄）
+        const t = r / R;
+        let y = (Math.random() - 0.5) * thickness * (1.15 - t);
+
+        // 轻微扰动让更自然
+        x += (Math.random() - 0.5) * 0.6;
+        z += (Math.random() - 0.5) * 0.6;
+
+        // 旋转倾斜（绕X轴）
+        const yy = y * Math.cos(tilt) - z * Math.sin(tilt);
+        const zz = y * Math.sin(tilt) + z * Math.cos(tilt);
+        y = yy; z = zz;
+
+        positions[i * 3 + 0] = x;
+        positions[i * 3 + 1] = y - 2.0; // 下移一点，树更居中
+        positions[i * 3 + 2] = z;
+
+        // 颜色：中心偏白蓝，外圈偏紫/蓝
+        const c = new THREE.Color();
+        const mixA = Math.min(1, t * 1.15);
+        const center = new THREE.Color(0xeaf6ff);
+        const outer = (Math.random() < 0.55) ? new THREE.Color(0x9adfff) : new THREE.Color(0xb9a2ff);
+        c.copy(center).lerp(outer, mixA);
+
+        // 微调饱和与亮度
+        c.offsetHSL((Math.random()-0.5)*0.02, (Math.random()-0.5)*0.05, (Math.random()-0.5)*0.06);
+
+        colors[i * 3 + 0] = c.r;
+        colors[i * 3 + 1] = c.g;
+        colors[i * 3 + 2] = c.b;
+
+        // 星点大小：中心稍大，外盘更细
+        scales[i] = (0.85 + Math.random() * 2.0) * (1.15 - t * 0.55);
+        phases[i] = Math.random() * Math.PI * 2;
+
+        // 亮度：中心更亮
+        brights[i] = (0.55 + Math.random() * 0.8) * (1.25 - t * 0.7);
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geo.setAttribute('aScale', new THREE.BufferAttribute(scales, 1));
+      geo.setAttribute('aPhase', new THREE.BufferAttribute(phases, 1));
+      geo.setAttribute('aBright', new THREE.BufferAttribute(brights, 1));
+
+      galaxyMat = makeTwinklePointsMaterial({
+        baseSize: isMobile ? 2.6 : 3.2,
+        opacity: 0.62,
+        twinkleStrength: 0.45,
+        timeSpeed: 0.55
+      });
+
+      galaxyPoints = new THREE.Points(geo, galaxyMat);
+      galaxyPoints.frustumCulled = false;
+      galaxyGroup.add(galaxyPoints);
+
+      // 3) 核心辉光点（更密、更亮）
+      const CORE_COUNT = CONFIG.cosmos.coreCount;
+      const cPos = new Float32Array(CORE_COUNT * 3);
+      const cCol = new Float32Array(CORE_COUNT * 3);
+      const cSca = new Float32Array(CORE_COUNT);
+      const cPha = new Float32Array(CORE_COUNT);
+      const cBri = new Float32Array(CORE_COUNT);
+
+      for (let i = 0; i < CORE_COUNT; i++) {
+        const r = Math.pow(Math.random(), 2.2) * (innerCut * 0.95);
+        const a = Math.random() * Math.PI * 2;
+        const x = Math.cos(a) * r;
+        const z = Math.sin(a) * r;
+        const y = (Math.random() - 0.5) * 2.0;
+
+        cPos[i*3+0] = x;
+        cPos[i*3+1] = y - 2.0;
+        cPos[i*3+2] = z;
+
+        const c = new THREE.Color(0xeaf6ff);
+        if (Math.random() < 0.35) c.lerp(new THREE.Color(0x9adfff), 0.6);
+        cCol[i*3+0] = c.r; cCol[i*3+1] = c.g; cCol[i*3+2] = c.b;
+
+        cSca[i] = 1.4 + Math.random() * 3.4;
+        cPha[i] = Math.random() * Math.PI * 2;
+        cBri[i] = 0.85 + Math.random() * 0.95;
+      }
+
+      const coreGeo = new THREE.BufferGeometry();
+      coreGeo.setAttribute('position', new THREE.BufferAttribute(cPos, 3));
+      coreGeo.setAttribute('color', new THREE.BufferAttribute(cCol, 3));
+      coreGeo.setAttribute('aScale', new THREE.BufferAttribute(cSca, 1));
+      coreGeo.setAttribute('aPhase', new THREE.BufferAttribute(cPha, 1));
+      coreGeo.setAttribute('aBright', new THREE.BufferAttribute(cBri, 1));
+
+      coreMat = makeTwinklePointsMaterial({
+        baseSize: isMobile ? 3.8 : 4.6,
+        opacity: 0.72,
+        twinkleStrength: 0.25,
+        timeSpeed: 0.35
+      });
+
+      galaxyCorePoints = new THREE.Points(coreGeo, coreMat);
+      galaxyCorePoints.frustumCulled = false;
+      galaxyGroup.add(galaxyCorePoints);
+
+      // 初始轻微旋转，让星系视角更美
+      galaxyGroup.rotation.y = 0.35;
+    }
+
+    function setupPostProcessing() {
+      const renderScene = new RenderPass(scene, camera);
+
+      const bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        1.05, 0.45, 0.9
+      );
+      bloomPass.threshold = 0.7;
+      bloomPass.strength = 0.62;
+      bloomPass.radius = 0.35;
+
+      composer = new EffectComposer(renderer);
+      composer.addPass(renderScene);
+      composer.addPass(bloomPass);
+    }
+
+    function createTextures() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128; canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 128, 128);
+
+      ctx.fillStyle = '#6ecbff';
+      ctx.beginPath();
+      for (let i = -128; i < 256; i += 32) {
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i + 32, 128);
+        ctx.lineTo(i + 16, 128);
+        ctx.lineTo(i - 16, 0);
+      }
+      ctx.fill();
+
+      caneTexture = new THREE.CanvasTexture(canvas);
+      caneTexture.wrapS = THREE.RepeatWrapping;
+      caneTexture.wrapT = THREE.RepeatWrapping;
+      caneTexture.repeat.set(3, 3);
+      caneTexture.colorSpace = THREE.SRGBColorSpace;
+    }
+
+    function createFloor() {
+      const geo = new THREE.CircleGeometry(22, 64);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0x050a18,
+        metalness: 0.15,
+        roughness: 0.95,
+        envMapIntensity: 0.25
+      });
+      const floor = new THREE.Mesh(geo, mat);
+      floor.rotation.x = -Math.PI / 2;
+      floor.position.y = -14;
+      floor.position.z = 0;
+      scene.add(floor);
+    }
+
+    function createSnow() {
+      const geometry = new THREE.BufferGeometry();
+      const vertices = [];
+      const velocities = [];
+
+      const canvas = document.createElement('canvas');
+      canvas.width = 32; canvas.height = 32;
+      const context = canvas.getContext('2d');
+      const grd = context.createRadialGradient(16,16,2,16,16,16);
+      grd.addColorStop(0, 'rgba(255,255,255,1)');
+      grd.addColorStop(1, 'rgba(255,255,255,0)');
+      context.fillStyle = grd;
+      context.beginPath();
+      context.arc(16, 16, 16, 0, Math.PI * 2);
+      context.fill();
+      const snowTexture = new THREE.CanvasTexture(canvas);
+      snowTexture.colorSpace = THREE.SRGBColorSpace;
+
+      for (let i = 0; i < CONFIG.particles.snowCount; i++) {
+        vertices.push(
+          THREE.MathUtils.randFloatSpread(110),
+          THREE.MathUtils.randFloatSpread(65),
+          THREE.MathUtils.randFloatSpread(70)
+        );
+        velocities.push(Math.random() * 0.22 + 0.08, Math.random() * 0.06);
+      }
+      geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+      geometry.setAttribute('userData', new THREE.Float32BufferAttribute(velocities, 2));
+
+      const material = new THREE.PointsMaterial({
+        color: 0xeaf6ff,
+        size: 0.42,
+        map: snowTexture,
+        transparent: true,
+        opacity: 0.78,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+
+      snowSystem = new THREE.Points(geometry, material);
+      scene.add(snowSystem);
+    }
+
+    function updateSnow() {
+      if (!snowSystem) return;
+      const positions = snowSystem.geometry.attributes.position.array;
+      const userData = snowSystem.geometry.attributes.userData.array;
+
+      for (let i = 0; i < CONFIG.particles.snowCount; i++) {
+        const fallSpeed = userData[i * 2];
+        positions[i * 3 + 1] -= fallSpeed;
+
+        const swaySpeed = userData[i * 2 + 1];
+        positions[i * 3] += Math.sin(clock.elapsedTime * 2 + i) * swaySpeed * 0.12;
+
+        if (positions[i * 3 + 1] < -34) {
+          positions[i * 3 + 1] = 34;
+          positions[i * 3] = THREE.MathUtils.randFloatSpread(110);
+          positions[i * 3 + 2] = THREE.MathUtils.randFloatSpread(70);
+        }
+      }
+      snowSystem.geometry.attributes.position.needsUpdate = true;
+    }
+
+    class Particle {
+      constructor(mesh, type, isDust = false) {
+        this.mesh = mesh;
+        this.type = type;
+        this.isDust = isDust;
+        this.posTree = new THREE.Vector3();
+        this.posScatter = new THREE.Vector3();
+        this.baseScale = mesh.scale.x;
+
+        const speedMult = (type === 'PHOTO') ? 0.3 : 2.0;
+        this.spinSpeed = new THREE.Vector3(
+          (Math.random() - 0.5) * speedMult,
+          (Math.random() - 0.5) * speedMult,
+          (Math.random() - 0.5) * speedMult
+        );
+
+        this.calculatePositions();
+      }
+
+      calculatePositions() {
+        if (this.type === 'PHOTO') {
+          this.posTree.set(0, 0, 0);
+          const rScatter = 8 + Math.random() * 12;
+          const theta = Math.random() * Math.PI * 2;
+          const phi = Math.acos(2 * Math.random() - 1);
+          this.posScatter.set(
+            rScatter * Math.sin(phi) * Math.cos(theta),
+            rScatter * Math.sin(phi) * Math.sin(theta),
+            rScatter * Math.cos(phi)
+          );
+          return;
+        }
+
+        const h = CONFIG.particles.treeHeight;
+        let t = Math.pow(Math.random(), 0.78);
+        const y = (t * h) - (h / 2);
+        let rMax = Math.max(0.5, CONFIG.particles.treeRadius * (1.0 - t));
+        const angle = t * 50 * Math.PI + Math.random() * Math.PI;
+        const r = rMax * (0.8 + Math.random() * 0.4);
+        this.posTree.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
+
+        let rScatter = this.isDust ? (12 + Math.random() * 20) : (8 + Math.random() * 12);
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        this.posScatter.set(
+          rScatter * Math.sin(phi) * Math.cos(theta),
+          rScatter * Math.sin(phi) * Math.sin(theta),
+          rScatter * Math.cos(phi)
+        );
+      }
+
+      update(dt, mode, focusTargetMesh) {
+        let target = (mode === 'SCATTER') ? this.posScatter : this.posTree;
+
+        if (mode === 'FOCUS') {
+          if (this.mesh === focusTargetMesh) {
+            const desiredWorldPos = new THREE.Vector3(0, 2, 35);
+            const invMatrix = new THREE.Matrix4().copy(mainGroup.matrixWorld).invert();
+            target = desiredWorldPos.applyMatrix4(invMatrix);
+          } else {
+            target = this.posScatter;
+          }
+        }
+
+        const lerpSpeed = (mode === 'FOCUS' && this.mesh === focusTargetMesh) ? 5.0 : 2.0;
+        this.mesh.position.lerp(target, lerpSpeed * dt);
+
+        if (mode === 'SCATTER') {
+          this.mesh.rotation.x += this.spinSpeed.x * dt;
+          this.mesh.rotation.y += this.spinSpeed.y * dt;
+          this.mesh.rotation.z += this.spinSpeed.z * dt;
+        } else if (mode === 'TREE') {
+          if (this.type === 'PHOTO') {
+            this.mesh.lookAt(0, this.mesh.position.y, 0);
+            this.mesh.rotateY(Math.PI);
+          } else {
+            this.mesh.rotation.x = THREE.MathUtils.lerp(this.mesh.rotation.x, 0, dt);
+            this.mesh.rotation.z = THREE.MathUtils.lerp(this.mesh.rotation.z, 0, dt);
+            this.mesh.rotation.y += 0.5 * dt;
+          }
+        }
+
+        if (mode === 'FOCUS' && this.mesh === focusTargetMesh) {
+          this.mesh.lookAt(camera.position);
+        }
+
+        let s = this.baseScale;
+        if (this.isDust) {
+          s = this.baseScale * (0.75 + 0.35 * Math.sin(clock.elapsedTime * 4 + this.mesh.id));
+          if (mode === 'TREE') s = 0;
+        } else if (mode === 'SCATTER' && this.type === 'PHOTO') {
+          s = this.baseScale * 2.5;
+        } else if (mode === 'FOCUS') {
+          s = (this.mesh === focusTargetMesh) ? 4.5 : (this.baseScale * 0.82);
+        }
+
+        this.mesh.scale.lerp(new THREE.Vector3(s, s, s), 4 * dt);
+      }
+    }
+
+    function updatePhotoLayout() {
+      const photos = particleSystem.filter(p => p.type === 'PHOTO');
+      const count = photos.length;
+      if (count === 0) return;
+
+      const h = CONFIG.particles.treeHeight * 0.9;
+      const bottomY = -h / 2;
+      const stepY = h / count;
+      const loops = 3;
+
+      photos.forEach((p, i) => {
+        const y = bottomY + stepY * i + stepY / 2;
+        const normalizedH = (y + h / 2) / CONFIG.particles.treeHeight;
+        const r = Math.max(1.0, CONFIG.particles.treeRadius * (1.0 - normalizedH)) + 3.0;
+        const angle = normalizedH * Math.PI * 2 * loops + (Math.PI / 4);
+        p.posTree.set(Math.cos(angle) * r, y, Math.sin(angle) * r);
+      });
+    }
+
+    function createParticles() {
+      const sphereGeo = new THREE.SphereGeometry(0.52, 32, 32);
+      const boxGeo = new THREE.BoxGeometry(0.56, 0.56, 0.56);
+
+      const curve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, -0.5, 0),
+        new THREE.Vector3(0, 0.3, 0),
+        new THREE.Vector3(0.1, 0.5, 0),
+        new THREE.Vector3(0.3, 0.4, 0)
+      ]);
+      const candyGeo = new THREE.TubeGeometry(curve, 16, 0.085, 8, false);
+
+      const iceMat = new THREE.MeshPhysicalMaterial({
+        color: CONFIG.colors.iceBlue,
+        metalness: 0.12,
+        roughness: 0.18,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.08,
+        transmission: 0.10,
+        thickness: 0.8,
+        envMapIntensity: 1.4,
+        emissive: 0x1b3a66,
+        emissiveIntensity: 0.10
+      });
+
+      const silverMat = new THREE.MeshStandardMaterial({
+        color: CONFIG.colors.silver,
+        metalness: 1.0,
+        roughness: 0.12,
+        envMapIntensity: 1.9,
+        emissive: 0x112233,
+        emissiveIntensity: 0.06
+      });
+
+      const auroraMat = new THREE.MeshPhysicalMaterial({
+        color: CONFIG.colors.auroraViolet,
+        metalness: 0.25,
+        roughness: 0.22,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.12,
+        envMapIntensity: 1.6,
+        emissive: 0x120a2a,
+        emissiveIntensity: 0.10
+      });
+
+      const candyMat = new THREE.MeshStandardMaterial({
+        map: caneTexture,
+        roughness: 0.35,
+        metalness: 0.08,
+        envMapIntensity: 1.0
+      });
+
+      for (let i = 0; i < CONFIG.particles.count; i++) {
+        const rand = Math.random();
+        let mesh, type;
+
+        if (rand < 0.52) { mesh = new THREE.Mesh(boxGeo, iceMat); type = 'ICE_BOX'; }
+        else if (rand < 0.82) { mesh = new THREE.Mesh(sphereGeo, silverMat); type = 'SILVER_SPHERE'; }
+        else if (rand < 0.93) { mesh = new THREE.Mesh(boxGeo, silverMat); type = 'SILVER_BOX'; }
+        else if (rand < 0.985) { mesh = new THREE.Mesh(sphereGeo, auroraMat); type = 'AURORA'; }
+        else { mesh = new THREE.Mesh(candyGeo, candyMat); type = 'CANE'; }
+
+        const s = 0.38 + Math.random() * 0.52;
+        mesh.scale.set(s, s, s);
+        mesh.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
+
+        mainGroup.add(mesh);
+        particleSystem.push(new Particle(mesh, type, false));
+      }
+
+      const starShape = new THREE.Shape();
+      const points = 5;
+      for (let i = 0; i < points * 2; i++) {
+        const angle = (i * Math.PI) / points + Math.PI / 2;
+        const r = (i % 2 === 0) ? 1.55 : 0.72;
+        const x = Math.cos(angle) * r;
+        const y = Math.sin(angle) * r;
+        if (i === 0) starShape.moveTo(x, y);
+        else starShape.lineTo(x, y);
+      }
+      starShape.closePath();
+
+      const starGeo = new THREE.ExtrudeGeometry(starShape, {
+        depth: 0.45,
+        bevelEnabled: true,
+        bevelThickness: 0.11,
+        bevelSize: 0.11,
+        bevelSegments: 2
+      });
+      starGeo.center();
+
+      const starMat = new THREE.MeshStandardMaterial({
+        color: CONFIG.colors.warmGold,
+        emissive: 0xffd27a,
+        emissiveIntensity: 0.9,
+        metalness: 1.0,
+        roughness: 0.08
+      });
+
+      const star = new THREE.Mesh(starGeo, starMat);
+      star.position.set(0, CONFIG.particles.treeHeight / 2 + 1.25, 0);
+      mainGroup.add(star);
+
+      mainGroup.add(photoMeshGroup);
+    }
+
+    function createGarland() {
+      const h = CONFIG.particles.treeHeight * 0.92;
+      const turns = 4.2;
+      const pts = [];
+      const segments = 220;
+
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        const y = (t * h) - (h / 2);
+        const r = (CONFIG.particles.treeRadius * (1.0 - t)) + 2.9;
+        const ang = t * Math.PI * 2 * turns + Math.PI / 4;
+        pts.push(new THREE.Vector3(Math.cos(ang) * r, y, Math.sin(ang) * r));
+      }
+
+      const curve = new THREE.CatmullRomCurve3(pts);
+      const tubeGeo = new THREE.TubeGeometry(curve, 260, 0.055, 10, false);
+      const tubeMat = new THREE.MeshPhysicalMaterial({
+        color: 0xd6f0ff,
+        metalness: 0.15,
+        roughness: 0.18,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.08,
+        emissive: 0x3aa7ff,
+        emissiveIntensity: 0.22,
+        envMapIntensity: 1.2
+      });
+
+      const garland = new THREE.Mesh(tubeGeo, tubeMat);
+      mainGroup.add(garland);
+    }
+
+    function createDust() {
+      const geo = new THREE.TetrahedronGeometry(0.085, 0);
+      const mat = new THREE.MeshBasicMaterial({ color: 0xd6f0ff, transparent: true, opacity: 0.7 });
+      for (let i = 0; i < CONFIG.particles.dustCount; i++) {
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.scale.setScalar(0.45 + Math.random() * 0.95);
+        mainGroup.add(mesh);
+        particleSystem.push(new Particle(mesh, 'DUST', true));
+      }
+    }
+
+    function addPhotoToScene(texture) {
+      const frameGeo = new THREE.BoxGeometry(1.4, 1.4, 0.055);
+      const frameMat = new THREE.MeshStandardMaterial({
+        color: 0xe9f4ff,
+        metalness: 1.0,
+        roughness: 0.12,
+        envMapIntensity: 1.8,
+        emissive: 0x0a1626,
+        emissiveIntensity: 0.08
+      });
+      const frame = new THREE.Mesh(frameGeo, frameMat);
+
+      let width = 1.2, height = 1.2;
+      if (texture.image) {
+        const aspect = texture.image.width / texture.image.height;
+        if (aspect > 1) height = width / aspect;
+        else width = height * aspect;
+      }
+
+      const photoGeo = new THREE.PlaneGeometry(width, height);
+      const photoMat = new THREE.MeshBasicMaterial({
+        map: texture,
+        side: THREE.DoubleSide,
+        transparent: true
+      });
+      const photo = new THREE.Mesh(photoGeo, photoMat);
+      photo.position.z = 0.045;
+
+      const group = new THREE.Group();
+      group.add(frame);
+      group.add(photo);
+
+      frame.scale.set(width / 1.2, height / 1.2, 1);
+      const s = 0.82;
+      group.scale.set(s, s, s);
+
+      photoMeshGroup.add(group);
+      particleSystem.push(new Particle(group, 'PHOTO', false));
+      updatePhotoLayout();
+    }
+
+    function handleImageUpload(e) {
+      const files = e.target.files;
+      if (!files || !files.length) return;
+
+      Array.from(files).forEach(f => {
+        if (!f.type.startsWith('image/')) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          new THREE.TextureLoader().load(ev.target.result, (t) => {
+            t.colorSpace = THREE.SRGBColorSpace;
+            addPhotoToScene(t);
+          });
+        };
+        reader.readAsDataURL(f);
+      });
+    }
+
+    function loadPredefinedImages() {
+      const loader = new THREE.TextureLoader();
+
+      if (CONFIG.preload.useCloudImages && CONFIG.preload.cloudImageUrls.length > 0) {
+        CONFIG.preload.cloudImageUrls.forEach(url => {
+          loader.load(
+            url,
+            (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); },
+            undefined,
+            () => { console.warn("Failed to load cloud image:", url); }
+          );
+        });
+      }
+
+      if (CONFIG.preload.autoScanLocal) {
+        for (let i = 1; i <= CONFIG.preload.scanCount; i++) {
+          const name = String(i).padStart(2, "0");
+          const pathJpg = `./images/${name}.jpg`;
+          const pathPng = `./images/${name}.png`;
+          loader.load(
+            pathJpg,
+            (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); },
+            undefined,
+            () => {
+              loader.load(pathPng, (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); }, undefined, () => { });
+            }
+          );
+        }
+      }
+    }
+
+    // --- MEDIAPIPE ---
+    function showMsg(txt) {
+      const box = document.getElementById('msg-box');
+      if (!box) return;
+      box.innerText = txt;
+      box.style.display = 'block';
+      setTimeout(() => { box.style.display = 'none'; }, 3000);
+    }
+
+    async function initMediaPipe() {
+      if (isCameraRunning) return;
+
+      camBtn.textContent = "🎉Surprise…";
+      setDebug("Loading AI models...");
+      video = document.getElementById('webcam');
+
+      try {
+        const vision = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+        );
+
+        handLandmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+            delegate: "GPU"
+          },
+          runningMode: "VIDEO",
+          numHands: 1
+        });
+
+        const constraints = { video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } } };
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        video.srcObject = stream;
+        video.addEventListener("loadeddata", predictWebcam);
+
+        setDebug("Gesture Active");
+        camBtn.textContent = "🎉Surprise";
+        camBtn.classList.add('active');
+        isCameraRunning = true;
+      } catch (e) {
+        console.warn("Camera error:", e);
+        let msg = "Camera Error: " + e.name;
+        if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') msg = "请允许摄像头权限～";
+        else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') msg = "需要 HTTPS 才能用摄像头";
+        setDebug(msg);
+        showMsg(msg);
+        camBtn.textContent = "🎉Surprise";
+      }
+    }
+
+    let lastVideoTime = -1;
+    async function predictWebcam() {
+      if (video && video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        if (handLandmarker) {
+          const result = handLandmarker.detectForVideo(video, performance.now());
+          processGestures(result);
+        }
+      }
+      requestAnimationFrame(predictWebcam);
+    }
+
+    function processGestures(result) {
+      if (result.landmarks && result.landmarks.length > 0) {
+        STATE.hand.detected = true;
+        const lm = result.landmarks[0];
+
+        STATE.hand.x = (lm[9].x - 0.5) * 2;
+        STATE.hand.y = (lm[9].y - 0.5) * 2;
+
+        const wrist = lm[0];
+        const middleMCP = lm[9];
+        const handSize = Math.hypot(middleMCP.x - wrist.x, middleMCP.y - wrist.y);
+        if (handSize < 0.02) return;
+
+        const tips = [lm[8], lm[12], lm[16], lm[20]];
+        let avgTipDist = 0;
+        tips.forEach(t => avgTipDist += Math.hypot(t.x - wrist.x, t.y - wrist.y));
+        avgTipDist /= 4;
+
+        const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+        const extensionRatio = avgTipDist / handSize;
+        const pinchRatio = pinchDist / handSize;
+
+        if (extensionRatio < 1.5) { STATE.mode = 'TREE'; STATE.focusTarget = null; }
+        else if (pinchRatio < 0.35) {
+          if (STATE.mode !== 'FOCUS') {
+            STATE.mode = 'FOCUS';
+            const photos = particleSystem.filter(p => p.type === 'PHOTO');
+            if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random() * photos.length)].mesh;
+          }
+        } else if (extensionRatio > 1.7) { STATE.mode = 'SCATTER'; STATE.focusTarget = null; }
+      } else {
+        STATE.hand.detected = false;
+      }
+    }
+
+    function setupEvents() {
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        composer.setSize(window.innerWidth, window.innerHeight);
+      }, { passive: true });
+
+      if (fileInput) fileInput.addEventListener('change', handleImageUpload);
+      if (folderInput) folderInput.addEventListener('change', handleImageUpload);
+
+      camBtn.addEventListener('click', async () => {
+        await setMusic(true);
+        initMediaPipe();
+      });
+
+      if (musicBtn) {
+        musicBtn.addEventListener('click', async () => {
+          await setMusic(!musicOn);
+        });
+      }
+    }
+
+    function setupTouchAndClick() {
+      const container = document.getElementById('canvas-container');
+
+      container.addEventListener('pointerdown', (e) => {
+        STATE.touch.active = true;
+        STATE.touch.startX = e.clientX;
+        STATE.touch.startY = e.clientY;
+        STATE.touch.lastX = e.clientX;
+        STATE.touch.lastY = e.clientY;
+      }, { passive: true });
+
+      window.addEventListener('pointermove', (e) => {
+        if (!STATE.touch.active) return;
+        const deltaX = e.clientX - STATE.touch.lastX;
+        const deltaY = e.clientY - STATE.touch.lastY;
+        STATE.rotation.y += deltaX * 0.005;
+        STATE.rotation.x += deltaY * 0.002;
+        STATE.rotation.x = Math.max(-0.5, Math.min(0.5, STATE.rotation.x));
+        STATE.touch.lastX = e.clientX;
+        STATE.touch.lastY = e.clientY;
+      }, { passive: true });
+
+      window.addEventListener('pointerup', (e) => {
+        const moveDist = Math.hypot(e.clientX - STATE.touch.startX, e.clientY - STATE.touch.startY);
+        const wasDragging = moveDist > 10;
+        STATE.touch.active = false;
+        if (wasDragging) return;
+
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+
+        const intersects = raycaster.intersectObjects(mainGroup.children, true);
+
+        let clickedPhoto = null;
+        for (let hit of intersects) {
+          let obj = hit.object;
+          while (obj.parent && obj.parent !== mainGroup && obj.parent !== photoMeshGroup) {
+            obj = obj.parent;
+          }
+          const particle = particleSystem.find(p => p.mesh === obj && p.type === 'PHOTO');
+          if (particle) { clickedPhoto = particle; break; }
+        }
+
+        if (clickedPhoto) {
+          STATE.mode = 'FOCUS';
+          STATE.focusTarget = clickedPhoto.mesh;
+        } else {
+          if (STATE.mode === 'FOCUS') {
+            STATE.mode = 'TREE';
+            STATE.focusTarget = null;
+          }
+        }
+      }, { passive: true });
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = clock.getDelta();
+      uTime += dt;
+
+      // 更新星空/星系材质时间（闪烁）
+      if (starsMat) starsMat.uniforms.uTime.value = uTime;
+      if (galaxyMat) galaxyMat.uniforms.uTime.value = uTime;
+      if (coreMat) coreMat.uniforms.uTime.value = uTime;
+
+      // 星系缓慢旋转：圣诞树在中心更有“宇宙舞台”感
+      if (galaxyGroup) {
+        galaxyGroup.rotation.y += 0.018 * dt;
+        // 轻微呼吸感（核心）
+        if (coreMat) {
+          const pulse = 0.68 + 0.06 * Math.sin(uTime * 0.8);
+          coreMat.uniforms.uOpacity.value = pulse;
+        }
+      }
+
+      if (STATE.hand.detected) {
+        if (STATE.mode === 'SCATTER') {
+          const targetRotY = STATE.hand.x * Math.PI * 0.9;
+          const targetRotX = STATE.hand.y * Math.PI * 0.25;
+          STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt;
+          STATE.rotation.x += (targetRotX - STATE.rotation.x) * 3.0 * dt;
+        } else {
+          STATE.rotation.y += 0.28 * dt;
+        }
+      } else if (STATE.touch.active) {
+      } else {
+        if (STATE.mode === 'TREE') {
+          STATE.rotation.y += 0.26 * dt;
+          STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt;
+        } else {
+          STATE.rotation.y += 0.10 * dt;
+        }
+      }
+
+      mainGroup.rotation.y = STATE.rotation.y;
+      mainGroup.rotation.x = STATE.rotation.x;
+
+      particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
+      updateSnow();
+      composer.render();
+    }
+
+    init();
+  </script>
+</body>
+</html>
 
