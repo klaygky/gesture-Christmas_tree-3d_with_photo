@@ -747,8 +747,15 @@
 
       if (CONFIG.preload.autoScanLocal) {
         for (let i = 1; i <= CONFIG.preload.scanCount; i++) {
-          const pathJpg = `./images/(${i}).jpg`;
-          const pathPng = `./images/(${i}).png`;
+          const pathJpg = `./images/01`;
+          const pathPng = `./images/02`;
+          const pathJpg = `./images/03`;
+          const pathPng = `./images/04`;
+          const pathJpg = `./images/05`;
+          const pathPng = `./images/06`;
+          const pathJpg = `./images/07`;
+          const pathPng = `./images/08`;
+          const pathPng = `./images/09`;
           loader.load(pathJpg, (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); }, undefined, () => {
             loader.load(pathPng, (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); }, undefined, () => { });
           });
