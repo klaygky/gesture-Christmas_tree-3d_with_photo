@@ -360,6 +360,8 @@
     // ===== Selective Bloom: Layers =====
     const BLOOM_LAYER = 1;
     const BASE_LAYER  = 0;
+    const bloomLayer = new THREE.Layers();
+    bloomLayer.set(BLOOM_LAYER);
 
     // ===== DOM =====
     const debugInfo = document.getElementById('debug-info');
@@ -438,47 +440,57 @@
       musicEnergy += (target - musicEnergy) * 0.08;
     }
 
-    // ===== 5 Premium Palettes (✌️ Peace Sign to cycle) =====
+    // ===== 5 套高级配色（Thumbs-Up 循环切换）=====
     const PALETTES = [
       {
-        name: "Glacier Ice",
-        bg: 0x030611, fog: 0x050a18,
-        primary: 0x8bd3ff, accent: 0xe9f4ff,
-        glow: 0x3aa7ff, rim: 0xb9a2ff,
-        star: 0xffe3a0
+        name: "Arctic Ice",
+        main:  0x8bd3ff,  // 主色（冰蓝）
+        accent:0xb9a2ff,  // 辅色（淡紫）
+        glow:  0x3aa7ff,  // 发光（霓虹蓝）
+        metal: 0xe9f4ff,  // 金属（银白）
+        fog:   0x050a18
       },
       {
         name: "Aurora Violet",
-        bg: 0x050214, fog: 0x0a0620,
-        primary: 0xb9a2ff, accent: 0xdff3ff,
-        glow: 0x9b6bff, rim: 0x6fd2ff,
-        star: 0xfff2c0
+        main:  0xb9a2ff,
+        accent:0x6fd2ff,
+        glow:  0xa78bff,
+        metal: 0xf2ecff,
+        fog:   0x06061a
       },
       {
-        name: "Rose Champagne",
-        bg: 0x12060c, fog: 0x160810,
-        primary: 0xffb7d5, accent: 0xffe6c8,
-        glow: 0xff6fb2, rim: 0xffa07a,
-        star: 0xffe3a0
+        name: "Champagne Gold",
+        main:  0xffe3a0,
+        accent:0xcfefff,
+        glow:  0xffc86b,
+        metal: 0xfff5de,
+        fog:   0x07070f
       },
       {
-        name: "Emerald Mint",
-        bg: 0x020b07, fog: 0x03140d,
-        primary: 0x6fffd3, accent: 0xe9fff7,
-        glow: 0x00ffcc, rim: 0x79a8ff,
-        star: 0xfff2c0
+        name: "Emerald Teal",
+        main:  0x2ee6c5,
+        accent:0x6fd2ff,
+        glow:  0x18ffc8,
+        metal: 0xe8fffb,
+        fog:   0x030a10
       },
       {
-        name: "Midnight Gold",
-        bg: 0x060512, fog: 0x09081a,
-        primary: 0xffd27a, accent: 0xf8fbff,
-        glow: 0xffc04d, rim: 0x8bd3ff,
-        star: 0xfff0b0
+        name: "Rose Quartz",
+        main:  0xffa6c9,
+        accent:0xb9a2ff,
+        glow:  0xff6bb5,
+        metal: 0xffedf5,
+        fog:   0x0a0310
       }
     ];
+    let paletteIndex = 0;
 
-    // --- Core CONFIG ---
+    // ===== CONFIG =====
     const CONFIG = {
+      colors: {
+        bg: 0x030611,
+        fog: 0x050a18
+      },
       particles: {
         count: 1400,
         dustCount: 1700,
@@ -506,14 +518,12 @@
       hand: { detected: false, x: 0, y: 0 },
       rotation: { x: 0, y: 0 },
       touch: { active: false, startX: 0, startY: 0, lastX: 0, lastY: 0 },
-
-      // ✌️ palette cycle state
-      paletteIndex: 0,
-      peacePrev: false,
-      lastPeaceAt: 0
+      gesture: {
+        thumbsUpHeld: false,
+        lastThumbsUpAt: 0,
+        cooldownMs: 1200
+      }
     };
-
-    const PEACE_COOLDOWN_MS = 1200;
 
     // ===== THREE =====
     let scene, camera, renderer;
@@ -532,31 +542,46 @@
     let mouse = new THREE.Vector2();
     let isCameraRunning = false;
 
-    // objects/material refs for palette updates
-    const REF = {
-      lights: {
-        ambient: null,
-        inner: null,
-        key: null,
-        rim: null,
-        fill: null,
-        flare: null
-      },
-      mats: {
-        ice: null,
-        silver: null,
-        auroraBall: null,
-        candy: null,
-        frame: null,
-        garland: null,
-        star: null
-      },
-      aurora: { mesh: null, mat: null },
-      stars: { system: null, colorAttr: null, base: null, phase: null, speed: null },
-      firefly: { system: null, posAttr: null, vel: null },
-      garland: { mesh: null },
-      focusHalo: { mesh: null, mat: null, attachedTo: null }
+    // 星空/极光/萤火/灯带
+    let starSystem = null;
+    let starColorAttr = null;
+    let starBase = null;
+    let starPhase = null;
+    let starSpeed = null;
+
+    let auroraMesh = null;
+    let auroraMat = null;
+
+    let fireflySystem = null;
+    let fireflyPosAttr = null;
+    let fireflyVel = null;
+
+    let garland = null;
+    let garlandMat = null;
+
+    // lens flare
+    let flareLight = null;
+
+    // ===== Materials & Lights (为换色保留引用) =====
+    const MAT = {
+      iceMat: null,
+      silverMat: null,
+      auroraMat2: null,
+      frameMat: null,
+      garlandMat: null
     };
+    const LIGHTS = {
+      ambient: null,
+      inner: null,
+      key: null,
+      rim: null,
+      fill: null
+    };
+
+    // ===== FOCUS “无损高亮” Halo =====
+    let focusHalo = null;
+    let focusHaloMat = null;
+    let haloAttachedTo = null;
 
     // ===== viewer =====
     let pvScale = 1;
@@ -578,7 +603,6 @@
       pvImg.src = '';
       document.body.classList.remove('pv-open');
     }
-
     pvClose?.addEventListener('click', closePhotoViewer);
     pvBackdrop?.addEventListener('click', closePhotoViewer);
     pvZoomIn?.addEventListener('click', () => setPVScale(pvScale * 1.25));
@@ -594,7 +618,6 @@
       box.style.display = 'block';
       setTimeout(() => { box.style.display = 'none'; }, 2200);
     }
-
     function computeDPR(){
       let dpr = Math.min(window.devicePixelRatio || 1, CONFIG.render.maxDPR);
       const mp = (window.innerWidth * window.innerHeight * dpr * dpr) / 1e6;
@@ -623,72 +646,83 @@
       return tex;
     }
 
-    // ===== Palette Apply (key) =====
-    function getPalette(){ return PALETTES[STATE.paletteIndex % PALETTES.length]; }
+    // ===== Thumbs Up 检测（关键）=====
+    function isThumbsUp(lm){
+      if (!lm || lm.length < 21) return false;
 
+      // y 越小越“上”
+      const wrist = lm[0];
+
+      const thumbTip = lm[4], thumbIP = lm[3], thumbMCP = lm[2];
+      const indexTip = lm[8], indexPIP = lm[6];
+      const middleTip = lm[12], middlePIP = lm[10];
+      const ringTip = lm[16], ringPIP = lm[14];
+      const pinkyTip = lm[20], pinkyPIP = lm[18];
+
+      const thumbUp =
+        (thumbTip.y < thumbIP.y) &&
+        (thumbIP.y < thumbMCP.y) &&
+        (thumbTip.y < wrist.y - 0.02);
+
+      const othersFolded =
+        (indexTip.y  > indexPIP.y) &&
+        (middleTip.y > middlePIP.y) &&
+        (ringTip.y   > ringPIP.y) &&
+        (pinkyTip.y  > pinkyPIP.y);
+
+      // 拇指不要贴太近掌心（避免误判“握拳”）
+      const thumbIndexDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+
+      return thumbUp && othersFolded && (thumbIndexDist > 0.08);
+    }
+
+    // ===== 应用配色（会改材质 + 灯光 + fog）=====
     function applyPalette(p){
-      // scene bg / fog
-      scene.background = new THREE.Color(p.bg);
-      if (scene.fog && scene.fog.color) scene.fog.color = new THREE.Color(p.fog);
+      if (!p) return;
+
+      // fog / background 氛围（轻微变化更高级）
+      CONFIG.colors.fog = p.fog;
+      if (scene && scene.fog) scene.fog.color.setHex(p.fog);
+
+      // ornaments
+      if (MAT.iceMat){
+        MAT.iceMat.color.setHex(p.main);
+        MAT.iceMat.emissive.setHex((p.glow));
+        MAT.iceMat.emissiveIntensity = 0.10;
+      }
+      if (MAT.silverMat){
+        MAT.silverMat.color.setHex(p.metal);
+        MAT.silverMat.emissive.setHex(0x112233);
+        MAT.silverMat.emissiveIntensity = 0.06;
+      }
+      if (MAT.auroraMat2){
+        MAT.auroraMat2.color.setHex(p.accent);
+        MAT.auroraMat2.emissive.setHex(p.accent);
+        MAT.auroraMat2.emissiveIntensity = 0.10;
+      }
+      if (MAT.garlandMat){
+        MAT.garlandMat.color.setHex(p.metal);
+        MAT.garlandMat.emissive.setHex(p.glow);
+      }
+      if (MAT.frameMat){
+        MAT.frameMat.color.setHex(p.metal);
+      }
 
       // lights
-      if (REF.lights.inner) REF.lights.inner.color.setHex(p.glow);
-      if (REF.lights.key) REF.lights.key.color.setHex(p.accent);
-      if (REF.lights.rim) REF.lights.rim.color.setHex(p.rim);
-      if (REF.lights.fill) REF.lights.fill.color.setHex(p.accent);
-      if (REF.lights.ambient) REF.lights.ambient.color.setHex(0xffffff);
-      if (REF.lights.flare) REF.lights.flare.color.setHex(0xffffff);
+      if (LIGHTS.inner) LIGHTS.inner.color.setHex(p.glow);
+      if (LIGHTS.key)   LIGHTS.key.color.setHex(p.metal);
+      if (LIGHTS.rim)   LIGHTS.rim.color.setHex(p.accent);
+      if (LIGHTS.fill)  LIGHTS.fill.color.setHex(p.metal);
 
-      // materials (shared by many meshes)
-      if (REF.mats.ice){
-        REF.mats.ice.color.setHex(p.primary);
-        REF.mats.ice.emissive.setHex(p.glow);
-        REF.mats.ice.emissiveIntensity = 0.10;
-      }
-      if (REF.mats.silver){
-        REF.mats.silver.color.setHex(p.accent);
-        REF.mats.silver.emissive.setHex(0x112233);
-        REF.mats.silver.emissiveIntensity = 0.05;
-      }
-      if (REF.mats.auroraBall){
-        REF.mats.auroraBall.color.setHex(p.rim);
-        REF.mats.auroraBall.emissive.setHex(p.rim);
-        REF.mats.auroraBall.emissiveIntensity = 0.10;
-      }
-      if (REF.mats.garland){
-        REF.mats.garland.color.setHex(p.accent);
-        REF.mats.garland.emissive.setHex(p.glow);
-      }
-      if (REF.mats.frame){
-        REF.mats.frame.color.setHex(p.accent);
-        REF.mats.frame.emissive.setHex(0x0a1626);
-        REF.mats.frame.emissiveIntensity = 0.08;
-      }
-      if (REF.mats.star){
-        REF.mats.star.color.setHex(p.star);
-        REF.mats.star.emissive.setHex(p.star);
-      }
-
-      // aurora shader colors
-      if (REF.aurora.mat){
-        REF.aurora.mat.uniforms.uColorA.value.setHex(p.primary);
-        REF.aurora.mat.uniforms.uColorB.value.setHex(p.rim);
-        REF.aurora.mat.uniforms.uColorC.value.setHex(0xffffff);
-      }
-
-      // snow / fireflies tint
-      if (snowSystem?.material) snowSystem.material.color.setHex(p.accent);
-      if (REF.firefly.system?.material) REF.firefly.system.material.color?.setHex?.(p.accent);
-
-      showMsg(`✌️ Peace!  ${p.name}`);
+      showMsg(`👍 Palette: ${p.name}`);
     }
 
     function cyclePalette(){
-      STATE.paletteIndex = (STATE.paletteIndex + 1) % PALETTES.length;
-      applyPalette(getPalette());
+      paletteIndex = (paletteIndex + 1) % PALETTES.length;
+      applyPalette(PALETTES[paletteIndex]);
     }
 
-    // ===== Focus Halo (photo “lossless highlight”) =====
+    // ===== FOCUS Halo =====
     function createFocusHalo(){
       const c = document.createElement('canvas');
       c.width = 256; c.height = 256;
@@ -707,7 +741,7 @@
       tex.colorSpace = THREE.SRGBColorSpace;
 
       const geo = new THREE.PlaneGeometry(1, 1);
-      const mat = new THREE.MeshBasicMaterial({
+      focusHaloMat = new THREE.MeshBasicMaterial({
         map: tex,
         transparent: true,
         opacity: 1.0,
@@ -716,45 +750,38 @@
         blending: THREE.AdditiveBlending
       });
 
-      const halo = new THREE.Mesh(geo, mat);
-      halo.layers.set(BLOOM_LAYER);
-      halo.visible = false;
-      halo.renderOrder = 999;
-
-      REF.focusHalo.mesh = halo;
-      REF.focusHalo.mat = mat;
-      REF.focusHalo.attachedTo = null;
+      focusHalo = new THREE.Mesh(geo, focusHaloMat);
+      focusHalo.layers.set(BLOOM_LAYER);
+      focusHalo.visible = false;
+      focusHalo.renderOrder = 999;
     }
 
     function updateFocusHalo(dt, t){
-      const halo = REF.focusHalo.mesh;
-      if (!halo) return;
+      if (!focusHalo) return;
 
       if (STATE.mode === 'FOCUS' && STATE.focusTarget) {
         const target = STATE.focusTarget;
 
-        if (REF.focusHalo.attachedTo !== target) {
-          if (halo.parent) halo.parent.remove(halo);
-          target.add(halo);
-          REF.focusHalo.attachedTo = target;
+        if (haloAttachedTo !== target) {
+          if (focusHalo.parent) focusHalo.parent.remove(focusHalo);
+          target.add(focusHalo);
+          haloAttachedTo = target;
         }
 
         const w = target.userData?.photoW ?? 1.2;
         const h = target.userData?.photoH ?? 1.2;
 
-        halo.visible = true;
-        halo.position.set(0, 0, 0.09);
+        focusHalo.visible = true;
+        focusHalo.position.set(0, 0, 0.09);
 
         const pulse = 1.18 + 0.06 * Math.sin(t * 2.2) + musicEnergy * 0.10;
-        halo.scale.set(w * pulse, h * pulse, 1);
+        focusHalo.scale.set(w * pulse, h * pulse, 1);
 
-        const p = getPalette();
-        // 让 Halo 颜色随 palette 变化（更高级）
-        halo.material.opacity = 0.62 + 0.14 * Math.sin(t * 1.6) + musicEnergy * 0.25;
+        focusHalo.material.opacity = 0.65 + 0.12 * Math.sin(t * 1.6) + musicEnergy * 0.25;
       } else {
-        halo.visible = false;
-        REF.focusHalo.attachedTo = null;
-        if (halo.parent) halo.parent.remove(halo);
+        focusHalo.visible = false;
+        haloAttachedTo = null;
+        if (focusHalo.parent) focusHalo.parent.remove(focusHalo);
       }
     }
 
@@ -777,15 +804,12 @@
       const t = 1 - Math.exp(-lambda * dt);
       return current + (target - current) * t;
     }
+
     function updateCinematicCamera(dt, t){
       if (STATE.mode === 'FOCUS' && STATE.focusTarget) {
         STATE.focusTarget.getWorldPosition(CAM.lookTarget);
         const orbit = 0.75 * Math.sin(t * 0.6);
-        CAM.posTarget.set(
-          orbit,
-          CAM.lookTarget.y + 0.45,
-          CAM.lookTarget.z - 12.5
-        );
+        CAM.posTarget.set(orbit, CAM.lookTarget.y + 0.45, CAM.lookTarget.z - 12.5);
         CAM.fovTarget = 38;
         if (bloomPass) bloomPass.strength = 0.95 + musicEnergy * 0.10;
       } else {
@@ -796,11 +820,7 @@
         const driftY = 0.45 * Math.sin(t * 0.10);
         const modeBoost = (STATE.mode === 'SCATTER') ? 4.0 : 0.0;
 
-        CAM.posTarget.set(
-          driftX,
-          2.0 + driftY,
-          baseZ + modeBoost + dolly
-        );
+        CAM.posTarget.set(driftX, 2.0 + driftY, baseZ + modeBoost + dolly);
         CAM.fovTarget = 42;
         if (bloomPass) bloomPass.strength = 1.05 + musicEnergy * 0.25;
       }
@@ -814,7 +834,7 @@
       camera.fov = expDampNum(camera.fov, CAM.fovTarget, CAM.smoothFov, dt);
       camera.updateProjectionMatrix();
 
-      if (REF.lights.flare) REF.lights.flare.intensity = 1.0 + musicEnergy * 0.25;
+      if (flareLight) flareLight.intensity = 1.0 + musicEnergy * 0.25;
     }
 
     // ===== init =====
@@ -841,8 +861,8 @@
       setupEvents();
       setupTouchAndClick();
 
-      // apply default palette
-      applyPalette(getPalette());
+      // 初始配色
+      applyPalette(PALETTES[paletteIndex]);
 
       const loader = document.getElementById('loader');
       loader.style.opacity = 0;
@@ -854,10 +874,8 @@
     function initThree() {
       const container = document.getElementById('canvas-container');
       scene = new THREE.Scene();
-
-      const p = getPalette();
-      scene.background = new THREE.Color(p.bg);
-      scene.fog = new THREE.FogExp2(p.fog, 0.016);
+      scene.background = new THREE.Color(CONFIG.colors.bg);
+      scene.fog = new THREE.FogExp2(CONFIG.colors.fog, 0.016);
 
       camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1200);
       camera.position.set(0, 2, CONFIG.camera.baseZ);
@@ -882,28 +900,34 @@
     }
 
     function setupLights() {
-      REF.lights.ambient = new THREE.AmbientLight(0xffffff, 0.55);
-      scene.add(REF.lights.ambient);
+      const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+      scene.add(ambient);
 
-      REF.lights.inner = new THREE.PointLight(0x9adfff, 2.3, 28);
-      REF.lights.inner.position.set(0, 5, 0);
-      mainGroup.add(REF.lights.inner);
+      const innerLight = new THREE.PointLight(0x9adfff, 2.3, 28);
+      innerLight.position.set(0, 5, 0);
+      mainGroup.add(innerLight);
 
-      REF.lights.key = new THREE.SpotLight(0xcfefff, 1300);
-      REF.lights.key.position.set(30, 45, 38);
-      REF.lights.key.angle = 0.52;
-      REF.lights.key.penumbra = 0.55;
-      scene.add(REF.lights.key);
+      const key = new THREE.SpotLight(0xcfefff, 1300);
+      key.position.set(30, 45, 38);
+      key.angle = 0.52;
+      key.penumbra = 0.55;
+      scene.add(key);
 
-      REF.lights.rim = new THREE.SpotLight(0xb9a2ff, 650);
-      REF.lights.rim.position.set(-32, 22, -30);
-      REF.lights.rim.angle = 0.6;
-      REF.lights.rim.penumbra = 0.7;
-      scene.add(REF.lights.rim);
+      const rim = new THREE.SpotLight(0xb9a2ff, 650);
+      rim.position.set(-32, 22, -30);
+      rim.angle = 0.6;
+      rim.penumbra = 0.7;
+      scene.add(rim);
 
-      REF.lights.fill = new THREE.DirectionalLight(0xeaf6ff, 0.75);
-      REF.lights.fill.position.set(0, 8, 50);
-      scene.add(REF.lights.fill);
+      const fill = new THREE.DirectionalLight(0xeaf6ff, 0.75);
+      fill.position.set(0, 8, 50);
+      scene.add(fill);
+
+      LIGHTS.ambient = ambient;
+      LIGHTS.inner = innerLight;
+      LIGHTS.key = key;
+      LIGHTS.rim = rim;
+      LIGHTS.fill = fill;
     }
 
     // ===== Selective Bloom =====
@@ -953,11 +977,7 @@
       );
 
       const VignetteShader = {
-        uniforms: {
-          tDiffuse: { value: null },
-          offset: { value: 1.05 },
-          darkness: { value: 1.08 }
-        },
+        uniforms: { tDiffuse: { value: null }, offset: { value: 1.05 }, darkness: { value: 1.08 } },
         vertexShader: `
           varying vec2 vUv;
           void main() {
@@ -970,7 +990,6 @@
           uniform float offset;
           uniform float darkness;
           varying vec2 vUv;
-
           void main() {
             vec4 color = texture2D(tDiffuse, vUv);
             vec2 uv = (vUv - vec2(0.5)) * offset;
@@ -995,11 +1014,11 @@
       if (finalComposer.setPixelRatio) finalComposer.setPixelRatio(dpr);
     }
 
+    // ===== 极光 =====
     function createAuroraDome() {
       const geo = new THREE.SphereGeometry(420, 48, 32);
 
-      const p = getPalette();
-      const mat = new THREE.ShaderMaterial({
+      auroraMat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
         transparent: true,
         depthWrite: false,
@@ -1007,8 +1026,8 @@
         uniforms: {
           uTime: { value: 0 },
           uOpacity: { value: 0.34 },
-          uColorA: { value: new THREE.Color(p.primary) },
-          uColorB: { value: new THREE.Color(p.rim) },
+          uColorA: { value: new THREE.Color(0x6fd2ff) },
+          uColorB: { value: new THREE.Color(0xb9a2ff) },
           uColorC: { value: new THREE.Color(0xffffff) }
         },
         vertexShader: `
@@ -1074,23 +1093,21 @@
         `
       });
 
-      const mesh = new THREE.Mesh(geo, mat);
-      scene.add(mesh);
-
-      REF.aurora.mesh = mesh;
-      REF.aurora.mat = mat;
+      auroraMesh = new THREE.Mesh(geo, auroraMat);
+      scene.add(auroraMesh);
     }
 
     function updateAurora(t){
-      if (!REF.aurora.mat) return;
-      REF.aurora.mat.uniforms.uTime.value = t;
-      REF.aurora.mat.uniforms.uOpacity.value = 0.32 + musicEnergy * 0.10;
-      if (REF.aurora.mesh){
-        REF.aurora.mesh.rotation.y = t * 0.02;
-        REF.aurora.mesh.rotation.x = Math.sin(t*0.07) * 0.02;
+      if (!auroraMat) return;
+      auroraMat.uniforms.uTime.value = t;
+      auroraMat.uniforms.uOpacity.value = 0.32 + musicEnergy * 0.10;
+      if (auroraMesh){
+        auroraMesh.rotation.y = t * 0.02;
+        auroraMesh.rotation.x = Math.sin(t*0.07) * 0.02;
       }
     }
 
+    // ===== 星空 =====
     function createStarfield() {
       const count = CONFIG.particles.starCount;
 
@@ -1112,9 +1129,9 @@
       const positions = new Float32Array(count * 3);
       const colors = new Float32Array(count * 3);
 
-      const starBase = new Float32Array(count);
-      const starPhase = new Float32Array(count);
-      const starSpeed = new Float32Array(count);
+      starBase = new Float32Array(count);
+      starPhase = new Float32Array(count);
+      starSpeed = new Float32Array(count);
 
       const minR = CONFIG.particles.starMinR;
       const maxR = CONFIG.particles.starMaxR;
@@ -1144,8 +1161,8 @@
 
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      const colorAttr = new THREE.BufferAttribute(colors, 3);
-      geo.setAttribute('color', colorAttr);
+      starColorAttr = new THREE.BufferAttribute(colors, 3);
+      geo.setAttribute('color', starColorAttr);
 
       const mat = new THREE.PointsMaterial({
         size: 0.62,
@@ -1157,27 +1174,16 @@
         vertexColors: true
       });
 
-      const sys = new THREE.Points(geo, mat);
-      sys.layers.set(BASE_LAYER);
-      sys.position.copy(camera.position);
-      scene.add(sys);
-
-      REF.stars.system = sys;
-      REF.stars.colorAttr = colorAttr;
-      REF.stars.base = starBase;
-      REF.stars.phase = starPhase;
-      REF.stars.speed = starSpeed;
+      starSystem = new THREE.Points(geo, mat);
+      starSystem.layers.set(BASE_LAYER);
+      starSystem.position.copy(camera.position);
+      scene.add(starSystem);
     }
 
     function updateStarfield(t) {
-      const sys = REF.stars.system;
-      const colorAttr = REF.stars.colorAttr;
-      const starBase = REF.stars.base;
-      const starPhase = REF.stars.phase;
-      const starSpeed = REF.stars.speed;
-      if (!sys || !colorAttr || !starBase) return;
+      if (!starSystem || !starColorAttr || !starBase) return;
 
-      const colors = colorAttr.array;
+      const colors = starColorAttr.array;
       const count = CONFIG.particles.starCount;
 
       for (let i = 0; i < count; i++) {
@@ -1189,12 +1195,12 @@
         colors[i * 3 + 1] = b * 1.02 * coolBoost;
         colors[i * 3 + 2] = b * 1.08 * coolBoost;
       }
-      colorAttr.needsUpdate = true;
+      starColorAttr.needsUpdate = true;
 
-      sys.rotation.y = -STATE.rotation.y * 0.15;
-      sys.rotation.x = -STATE.rotation.x * 0.08;
-      sys.position.copy(camera.position);
-      sys.material.opacity = 0.86 + musicEnergy * 0.08;
+      starSystem.rotation.y = -STATE.rotation.y * 0.15;
+      starSystem.rotation.x = -STATE.rotation.x * 0.08;
+      starSystem.position.copy(camera.position);
+      starSystem.material.opacity = 0.86 + musicEnergy * 0.08;
     }
 
     function createFloor() {
@@ -1213,8 +1219,6 @@
     }
 
     function createTextures() {
-      const p = getPalette();
-
       const canvas = document.createElement('canvas');
       canvas.width = 128; canvas.height = 128;
       const ctx = canvas.getContext('2d');
@@ -1222,10 +1226,7 @@
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(0, 0, 128, 128);
 
-      // candy stripe tint follows palette primary (高级小细节)
-      const stripe = new THREE.Color(p.primary);
-      const stripeCSS = `rgb(${Math.floor(stripe.r*255)},${Math.floor(stripe.g*255)},${Math.floor(stripe.b*255)})`;
-      ctx.fillStyle = stripeCSS;
+      ctx.fillStyle = '#6ecbff';
       ctx.beginPath();
       for (let i = -128; i < 256; i += 32) {
         ctx.moveTo(i, 0);
@@ -1271,9 +1272,8 @@
       geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
       geometry.setAttribute('userData', new THREE.Float32BufferAttribute(velocities, 2));
 
-      const p = getPalette();
       const material = new THREE.PointsMaterial({
-        color: p.accent,
+        color: 0xeaf6ff,
         size: 0.42,
         map: snowTexture,
         transparent: true,
@@ -1440,10 +1440,9 @@
       ]);
       const candyGeo = new THREE.TubeGeometry(curve, 16, 0.085, 8, false);
 
-      const p = getPalette();
-
+      // 先用默认色，稍后 applyPalette 会替换
       const iceMat = new THREE.MeshPhysicalMaterial({
-        color: p.primary,
+        color: 0x8bd3ff,
         metalness: 0.10,
         roughness: 0.18,
         clearcoat: 1.0,
@@ -1451,12 +1450,12 @@
         transmission: 0.10,
         thickness: 0.8,
         envMapIntensity: 1.4,
-        emissive: p.glow,
+        emissive: 0x1b3a66,
         emissiveIntensity: 0.10
       });
 
       const silverMat = new THREE.MeshStandardMaterial({
-        color: p.accent,
+        color: 0xe9f4ff,
         metalness: 1.0,
         roughness: 0.12,
         envMapIntensity: 1.9,
@@ -1464,14 +1463,14 @@
         emissiveIntensity: 0.06
       });
 
-      const auroraBallMat = new THREE.MeshPhysicalMaterial({
-        color: p.rim,
+      const auroraMat2 = new THREE.MeshPhysicalMaterial({
+        color: 0xb9a2ff,
         metalness: 0.22,
         roughness: 0.22,
         clearcoat: 1.0,
         clearcoatRoughness: 0.12,
         envMapIntensity: 1.6,
-        emissive: p.rim,
+        emissive: 0x120a2a,
         emissiveIntensity: 0.10
       });
 
@@ -1482,10 +1481,9 @@
         envMapIntensity: 1.0
       });
 
-      REF.mats.ice = iceMat;
-      REF.mats.silver = silverMat;
-      REF.mats.auroraBall = auroraBallMat;
-      REF.mats.candy = candyMat;
+      MAT.iceMat = iceMat;
+      MAT.silverMat = silverMat;
+      MAT.auroraMat2 = auroraMat2;
 
       for (let i = 0; i < CONFIG.particles.count; i++) {
         const rand = Math.random();
@@ -1494,7 +1492,7 @@
         if (rand < 0.52) { mesh = new THREE.Mesh(boxGeo, iceMat); type = 'ICE_BOX'; }
         else if (rand < 0.82) { mesh = new THREE.Mesh(sphereGeo, silverMat); type = 'SILVER_SPHERE'; }
         else if (rand < 0.93) { mesh = new THREE.Mesh(boxGeo, silverMat); type = 'SILVER_BOX'; }
-        else if (rand < 0.985) { mesh = new THREE.Mesh(sphereGeo, auroraBallMat); type = 'AURORA'; }
+        else if (rand < 0.985) { mesh = new THREE.Mesh(sphereGeo, auroraMat2); type = 'AURORA'; }
         else { mesh = new THREE.Mesh(candyGeo, candyMat); type = 'CANE'; }
 
         const s = 0.38 + Math.random() * 0.52;
@@ -1531,13 +1529,12 @@
       starGeo.center();
 
       const starMat = new THREE.MeshStandardMaterial({
-        color: p.star,
-        emissive: p.star,
+        color: 0xffe3a0,
+        emissive: 0xffd27a,
         emissiveIntensity: 0.9,
         metalness: 1.0,
         roughness: 0.08
       });
-      REF.mats.star = starMat;
 
       const star = new THREE.Mesh(starGeo, starMat);
       star.position.set(0, CONFIG.particles.treeHeight / 2 + 1.25, 0);
@@ -1545,12 +1542,11 @@
       star.layers.enable(BLOOM_LAYER);
       mainGroup.add(star);
 
-      // Lens flare (light)
-      REF.lights.flare = new THREE.PointLight(0xffffff, 1.0, 80);
-      REF.lights.flare.position.copy(star.position).add(new THREE.Vector3(0, 0.6, 2.5));
-      REF.lights.flare.layers.enable(BASE_LAYER);
-      REF.lights.flare.layers.enable(BLOOM_LAYER);
-      scene.add(REF.lights.flare);
+      flareLight = new THREE.PointLight(0xffffff, 1.0, 80);
+      flareLight.position.copy(star.position).add(new THREE.Vector3(0, 0.6, 2.5));
+      flareLight.layers.enable(BASE_LAYER);
+      flareLight.layers.enable(BLOOM_LAYER);
+      scene.add(flareLight);
 
       const flareTex = (() => {
         const c = document.createElement('canvas');
@@ -1572,7 +1568,7 @@
       lensflare.addElement(new LensflareElement(flareTex, 180, 0.0));
       lensflare.addElement(new LensflareElement(flareTex, 90, 0.35));
       lensflare.addElement(new LensflareElement(flareTex, 60, 0.65));
-      REF.lights.flare.add(lensflare);
+      flareLight.add(lensflare);
 
       mainGroup.add(photoMeshGroup);
     }
@@ -1593,32 +1589,29 @@
 
       const curve = new THREE.CatmullRomCurve3(pts);
       const tubeGeo = new THREE.TubeGeometry(curve, 260, 0.055, 10, false);
-
-      const p = getPalette();
-      const garlandMat = new THREE.MeshPhysicalMaterial({
-        color: p.accent,
+      garlandMat = new THREE.MeshPhysicalMaterial({
+        color: 0xd6f0ff,
         metalness: 0.15,
         roughness: 0.18,
         clearcoat: 1.0,
         clearcoatRoughness: 0.08,
-        emissive: p.glow,
+        emissive: 0x3aa7ff,
         emissiveIntensity: 0.20,
         envMapIntensity: 1.2
       });
-      REF.mats.garland = garlandMat;
 
-      const garland = new THREE.Mesh(tubeGeo, garlandMat);
+      MAT.garlandMat = garlandMat;
+
+      garland = new THREE.Mesh(tubeGeo, garlandMat);
       garland.layers.enable(BASE_LAYER);
       garland.layers.enable(BLOOM_LAYER);
       mainGroup.add(garland);
-
-      REF.garland.mesh = garland;
     }
 
     function updateGarlandBreath(t){
-      if (!REF.mats.garland) return;
+      if (!garlandMat) return;
       const breath = 0.16 + 0.08 * (0.5 + 0.5 * Math.sin(t*1.2));
-      REF.mats.garland.emissiveIntensity = breath + musicEnergy * 0.22;
+      garlandMat.emissiveIntensity = breath + musicEnergy * 0.22;
     }
 
     function createFireflies() {
@@ -1639,7 +1632,7 @@
       tex.colorSpace = THREE.SRGBColorSpace;
 
       const pos = new Float32Array(count * 3);
-      const vel = new Float32Array(count * 3);
+      fireflyVel = new Float32Array(count * 3);
 
       for (let i = 0; i < count; i++) {
         const r = 10 + Math.random() * 26;
@@ -1650,50 +1643,41 @@
         pos[i*3+1] = y;
         pos[i*3+2] = Math.sin(ang) * r;
 
-        vel[i*3+0] = (Math.random()-0.5) * 0.18;
-        vel[i*3+1] = (Math.random()-0.5) * 0.10;
-        vel[i*3+2] = (Math.random()-0.5) * 0.18;
+        fireflyVel[i*3+0] = (Math.random()-0.5) * 0.18;
+        fireflyVel[i*3+1] = (Math.random()-0.5) * 0.10;
+        fireflyVel[i*3+2] = (Math.random()-0.5) * 0.18;
       }
 
       const geo = new THREE.BufferGeometry();
-      const posAttr = new THREE.BufferAttribute(pos, 3);
-      geo.setAttribute('position', posAttr);
+      fireflyPosAttr = new THREE.BufferAttribute(pos, 3);
+      geo.setAttribute('position', fireflyPosAttr);
 
-      const p = getPalette();
       const mat = new THREE.PointsMaterial({
         size: 0.38,
         map: tex,
         transparent: true,
         opacity: 0.70,
         depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        color: p.accent
+        blending: THREE.AdditiveBlending
       });
 
-      const sys = new THREE.Points(geo, mat);
-      sys.layers.enable(BASE_LAYER);
-      sys.layers.enable(BLOOM_LAYER);
-      mainGroup.add(sys);
-
-      REF.firefly.system = sys;
-      REF.firefly.posAttr = posAttr;
-      REF.firefly.vel = vel;
+      fireflySystem = new THREE.Points(geo, mat);
+      fireflySystem.layers.enable(BASE_LAYER);
+      fireflySystem.layers.enable(BLOOM_LAYER);
+      mainGroup.add(fireflySystem);
     }
 
     function updateFireflies(dt, t){
-      const sys = REF.firefly.system;
-      const posAttr = REF.firefly.posAttr;
-      const vel = REF.firefly.vel;
-      if (!sys || !posAttr || !vel) return;
+      if (!fireflySystem || !fireflyPosAttr || !fireflyVel) return;
 
-      const p = posAttr.array;
+      const p = fireflyPosAttr.array;
       const count = CONFIG.particles.fireflyCount;
 
       for (let i = 0; i < count; i++) {
         const ix = i*3;
-        p[ix+0] += vel[ix+0] * dt;
-        p[ix+1] += vel[ix+1] * dt;
-        p[ix+2] += vel[ix+2] * dt;
+        p[ix+0] += fireflyVel[ix+0] * dt;
+        p[ix+1] += fireflyVel[ix+1] * dt;
+        p[ix+2] += fireflyVel[ix+2] * dt;
 
         const swirl = 0.25 * Math.sin(t*0.7 + i*0.02);
         const x = p[ix+0], z = p[ix+2];
@@ -1712,8 +1696,8 @@
         if (p[ix+1] < -14) p[ix+1] = 14;
       }
 
-      posAttr.needsUpdate = true;
-      sys.material.opacity = 0.66 + musicEnergy * 0.14;
+      fireflyPosAttr.needsUpdate = true;
+      fireflySystem.material.opacity = 0.66 + musicEnergy * 0.14;
     }
 
     function createDust() {
@@ -1730,17 +1714,15 @@
 
     function addPhotoToScene(texture) {
       const frameGeo = new THREE.BoxGeometry(1.4, 1.4, 0.055);
-
-      const p = getPalette();
-      const frameMat = REF.mats.frame ?? new THREE.MeshStandardMaterial({
-        color: p.accent,
+      const frameMat = new THREE.MeshStandardMaterial({
+        color: 0xe9f4ff,
         metalness: 1.0,
         roughness: 0.12,
         envMapIntensity: 1.8,
         emissive: 0x0a1626,
         emissiveIntensity: 0.08
       });
-      REF.mats.frame = frameMat;
+      MAT.frameMat = frameMat;
 
       const frame = new THREE.Mesh(frameGeo, frameMat);
 
@@ -1752,12 +1734,8 @@
       }
 
       const photoGeo = new THREE.PlaneGeometry(width, height);
-      const photoMat = new THREE.MeshBasicMaterial({
-        map: texture,
-        side: THREE.DoubleSide
-      });
+      const photoMat = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
       photoMat.toneMapped = false;
-
       const photo = new THREE.Mesh(photoGeo, photoMat);
       photo.position.z = 0.045;
 
@@ -1828,39 +1806,6 @@
       }
     }
 
-    // ===== ✌️ Peace Sign Detection (MediaPipe landmarks) =====
-    function isFingerExtended(lm, tip, pip, mcp){
-      // y 越小越靠上（伸直一般 tip 在 pip/mcp 上方）
-      return (lm[tip].y < lm[pip].y && lm[pip].y < lm[mcp].y);
-    }
-
-    function isPeaceSign(lm){
-      const indexExt  = isFingerExtended(lm, 8, 6, 5);
-      const middleExt = isFingerExtended(lm, 12, 10, 9);
-      const ringExt   = isFingerExtended(lm, 16, 14, 13);
-      const pinkyExt  = isFingerExtended(lm, 20, 18, 17);
-
-      // V 手势：食指+中指伸直，环指+小指收起
-      if (!(indexExt && middleExt && !ringExt && !pinkyExt)) return false;
-
-      // 额外：食指与中指要“分开一点”，避免误判（阈值可调）
-      const sep = Math.hypot(lm[8].x - lm[12].x, lm[8].y - lm[12].y);
-      return sep > 0.035;
-    }
-
-    function handlePeaceTrigger(){
-      const now = performance.now();
-      if (now - STATE.lastPeaceAt < PEACE_COOLDOWN_MS) return;
-      STATE.lastPeaceAt = now;
-      cyclePalette();
-      // 顺手让糖纹理也跟着变（小高级点）
-      createTextures();
-      if (REF.mats.candy && caneTexture){
-        REF.mats.candy.map = caneTexture;
-        REF.mats.candy.needsUpdate = true;
-      }
-    }
-
     // ===== MEDIAPIPE =====
     async function initMediaPipe() {
       if (isCameraRunning) return;
@@ -1894,7 +1839,7 @@
         camBtn.classList.add('active');
         isCameraRunning = true;
 
-        showMsg("摄像头已开启：比耶 ✌️ 换配色");
+        showMsg("摄像头已开启：比 👍 换树色");
       } catch (e) {
         console.warn("Camera error:", e);
         let msg = "Camera Error: " + e.name;
@@ -1923,18 +1868,24 @@
         STATE.hand.detected = true;
         const lm = result.landmarks[0];
 
-        // hand cursor
+        // ===== 👍 换色触发（带防连发）=====
+        const thumbs = isThumbsUp(lm);
+        const now = performance.now();
+
+        if (thumbs) {
+          if (!STATE.gesture.thumbsUpHeld && (now - STATE.gesture.lastThumbsUpAt > STATE.gesture.cooldownMs)) {
+            STATE.gesture.lastThumbsUpAt = now;
+            STATE.gesture.thumbsUpHeld = true;
+            cyclePalette();
+          }
+        } else {
+          STATE.gesture.thumbsUpHeld = false;
+        }
+
+        // 你原来的模式控制逻辑保留
         STATE.hand.x = (lm[9].x - 0.5) * 2;
         STATE.hand.y = (lm[9].y - 0.5) * 2;
 
-        // ✌️ detect peace (edge-trigger)
-        const peaceNow = isPeaceSign(lm);
-        if (peaceNow && !STATE.peacePrev) {
-          handlePeaceTrigger();
-        }
-        STATE.peacePrev = peaceNow;
-
-        // keep your old modes (fist / pinch / open) logic
         const wrist = lm[0];
         const middleMCP = lm[9];
         const handSize = Math.hypot(middleMCP.x - wrist.x, middleMCP.y - wrist.y);
@@ -1960,7 +1911,7 @@
 
       } else {
         STATE.hand.detected = false;
-        STATE.peacePrev = false;
+        STATE.gesture.thumbsUpHeld = false;
       }
     }
 
@@ -2097,9 +2048,10 @@
       updateSnow();
       updateFocusHalo(dt, t);
 
-      // selective bloom render
+      // Selective Bloom render
       camera.layers.set(BLOOM_LAYER);
       bloomComposer.render();
+
       camera.layers.set(BASE_LAYER);
       finalComposer.render();
     }
