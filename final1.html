@@ -183,10 +183,7 @@
     }
 
     #webcam-wrapper,
-    #debug-info {
-      display: none !important;
-    }
-
+    #debug-info { display: none !important; }
     input[type="file"] { display: none; }
   </style>
 
@@ -237,6 +234,8 @@
     import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
@@ -270,7 +269,7 @@
       }
     }
 
-    // --- 核心配置（冰蓝高级配色 + 星空 + 极光 + 萤火） ---
+    // ===== CONFIG =====
     const CONFIG = {
       colors: {
         bg: 0x030611,
@@ -287,15 +286,23 @@
         treeHeight: 24,
         treeRadius: 8,
 
-        // 星空
         starCount: 1400,
         starMinR: 90,
         starMaxR: 260,
 
-        // 萤火
         fireflyCount: 260
       },
-      camera: { z: 50 },
+      camera: {
+        baseZ: 50
+      },
+      post: {
+        // 电影感景深：只在 FOCUS 开启（很克制）
+        dofEnabled: true,
+        dofAperture: 0.010, // 越大越“糊”，建议 0.006~0.016
+        dofMaxblur: 0.010,  // 建议 0.006~0.018
+        vignetteOffset: 1.05,
+        vignetteDarkness: 1.08
+      },
       preload: {
         autoScanLocal: true,
         useCloudImages: false,
@@ -312,6 +319,7 @@
       touch: { active: false, startX: 0, startY: 0, lastX: 0, lastY: 0 }
     };
 
+    // ===== THREE =====
     let scene, camera, renderer, composer;
     let mainGroup;
     let clock = new THREE.Clock();
@@ -322,36 +330,63 @@
     let snowSystem;
     let raycaster = new THREE.Raycaster();
     let mouse = new THREE.Vector2();
-
     let isCameraRunning = false;
 
-    // ⭐ 星空
+    // 星空
     let starSystem = null;
     let starColorAttr = null;
     let starBase = null;
     let starPhase = null;
     let starSpeed = null;
 
-    // ⭐ 极光穹顶
+    // 极光
     let auroraMesh = null;
     let auroraMat = null;
 
-    // ⭐ 萤火
+    // 萤火
     let fireflySystem = null;
     let fireflyPosAttr = null;
-    let fireflyColorAttr = null;
     let fireflyVel = null;
 
-    // ⭐ 灯带
+    // 灯带
     let garland = null;
     let garlandMat = null;
+
+    // 后期
+    let bokehPass = null;
+    let bloomPass = null;
+    let vignettePass = null;
+
+    // ===== 电影感相机（核心）=====
+    const CAM = {
+      pos: new THREE.Vector3(0, 2, CONFIG.camera.baseZ),
+      look: new THREE.Vector3(0, 0, 0),
+      posTarget: new THREE.Vector3(0, 2, CONFIG.camera.baseZ),
+      lookTarget: new THREE.Vector3(0, 0, 0),
+      fovTarget: 42,
+      smoothPos: 6.5,
+      smoothLook: 7.5,
+      smoothFov: 6.0
+    };
+
+    const tmpV3A = new THREE.Vector3();
+    const tmpV3B = new THREE.Vector3();
+
+    function expDamp(current, target, lambda, dt) {
+      // smooth step: current += (target-current)*(1-exp(-lambda*dt))
+      const t = 1 - Math.exp(-lambda * dt);
+      current.lerp(target, t);
+    }
+    function expDampNum(current, target, lambda, dt){
+      const t = 1 - Math.exp(-lambda * dt);
+      return current + (target - current) * t;
+    }
 
     async function init() {
       initThree();
       setupEnvironment();
       setupLights();
 
-      // 背景层：极光 + 星空（先做“远景”）
       createAuroraDome();
       createStarfield();
 
@@ -363,6 +398,7 @@
       createDust();
       createSnow();
       loadPredefinedImages();
+
       setupPostProcessing();
       setupEvents();
       setupTouchAndClick();
@@ -380,8 +416,8 @@
       scene.background = new THREE.Color(CONFIG.colors.bg);
       scene.fog = new THREE.FogExp2(CONFIG.colors.fog, 0.016);
 
-      camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1000);
-      camera.position.set(0, 2, CONFIG.camera.z);
+      camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1200);
+      camera.position.set(0, 2, CONFIG.camera.baseZ);
 
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
       renderer.setSize(window.innerWidth, window.innerHeight);
@@ -389,7 +425,6 @@
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.6;
-
       container.appendChild(renderer.domElement);
 
       mainGroup = new THREE.Group();
@@ -426,50 +461,66 @@
       scene.add(fill);
     }
 
+    // ===== 后期：Render -> DOF(FOCUS) -> Bloom -> Vignette =====
     function setupPostProcessing() {
-      const renderScene = new RenderPass(scene, camera);
+      composer = new EffectComposer(renderer);
+      composer.addPass(new RenderPass(scene, camera));
 
-      const bloomPass = new UnrealBloomPass(
+      // DOF（只在 FOCUS 开启）
+      bokehPass = new BokehPass(scene, camera, {
+        focus: 40.0,
+        aperture: CONFIG.post.dofAperture,
+        maxblur: CONFIG.post.dofMaxblur
+      });
+      bokehPass.enabled = false;
+      composer.addPass(bokehPass);
+
+      bloomPass = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
         1.05, 0.45, 0.9
       );
       bloomPass.threshold = 0.7;
       bloomPass.strength = 0.62;
       bloomPass.radius = 0.35;
-
-      composer = new EffectComposer(renderer);
-      composer.addPass(renderScene);
       composer.addPass(bloomPass);
+
+      // 电影暗角（轻）
+      const VignetteShader = {
+        uniforms: {
+          tDiffuse: { value: null },
+          offset: { value: CONFIG.post.vignetteOffset },
+          darkness: { value: CONFIG.post.vignetteDarkness }
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D tDiffuse;
+          uniform float offset;
+          uniform float darkness;
+          varying vec2 vUv;
+
+          void main() {
+            vec4 color = texture2D(tDiffuse, vUv);
+            vec2 uv = (vUv - vec2(0.5)) * offset;
+            float vig = smoothstep(0.85, 0.30, dot(uv, uv));
+            // 让暗角更柔
+            float v = pow(vig, darkness);
+            color.rgb *= v;
+            gl_FragColor = color;
+          }
+        `
+      };
+
+      vignettePass = new ShaderPass(VignetteShader);
+      composer.addPass(vignettePass);
     }
 
-    function createTextures() {
-      const canvas = document.createElement('canvas');
-      canvas.width = 128; canvas.height = 128;
-      const ctx = canvas.getContext('2d');
-
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, 128, 128);
-
-      ctx.fillStyle = '#6ecbff';
-      ctx.beginPath();
-      for (let i = -128; i < 256; i += 32) {
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i + 32, 128);
-        ctx.lineTo(i + 16, 128);
-        ctx.lineTo(i - 16, 0);
-      }
-      ctx.fill();
-
-      caneTexture = new THREE.CanvasTexture(canvas);
-      caneTexture.wrapS = THREE.RepeatWrapping;
-      caneTexture.wrapT = THREE.RepeatWrapping;
-      caneTexture.repeat.set(3, 3);
-      caneTexture.colorSpace = THREE.SRGBColorSpace;
-    }
-
-    // =========================
-    // ① 极光穹顶 Aurora Dome（动态高级背景）
-    // =========================
+    // ===== 背景极光 =====
     function createAuroraDome() {
       const geo = new THREE.SphereGeometry(420, 48, 32);
 
@@ -519,13 +570,11 @@
           }
 
           void main(){
-            // 把穹顶位置映射到极光坐标（y方向更明显）
             vec3 p = normalize(vPos);
-            float lat = p.y * 0.5 + 0.5;          // 0..1
-            float lon = atan(p.z, p.x) / 6.28318; // -0.5..0.5
+            float lat = p.y * 0.5 + 0.5;
+            float lon = atan(p.z, p.x) / 6.28318;
             lon = lon + 0.5;
 
-            // 极光条带：多层噪声 + 正弦
             float t = uTime * 0.035;
             vec2 uv = vec2(lon*3.5, lat*2.2);
 
@@ -539,7 +588,6 @@
             float aur = (n1*0.55 + n2*0.30 + n3*0.15);
             aur = aur * waves * band;
 
-            // 让极光集中在上半部分，底部更暗
             float mask = smoothstep(0.15, 0.95, lat) * (1.0 - smoothstep(0.00, 0.28, 1.0-lat));
             aur *= mask;
 
@@ -559,16 +607,13 @@
     function updateAurora(t){
       if (!auroraMat) return;
       auroraMat.uniforms.uTime.value = t;
-      // 轻微旋转，更像天空在“流动”
       if (auroraMesh){
         auroraMesh.rotation.y = t * 0.02;
         auroraMesh.rotation.x = Math.sin(t*0.07) * 0.02;
       }
     }
 
-    // =========================
-    // ② 星空闪烁 Starfield（你要的第二个效果，保留 + 优化）
-    // =========================
+    // ===== 星空 =====
     function createStarfield() {
       const count = CONFIG.particles.starCount;
 
@@ -662,9 +707,7 @@
       starSystem.position.copy(camera.position);
     }
 
-    // =========================
-    // ③ 萤火微粒 Fireflies（更“精致”的近景漂浮）
-    // =========================
+    // ===== 萤火 =====
     function createFireflies() {
       const count = CONFIG.particles.fireflyCount;
 
@@ -683,7 +726,6 @@
       tex.colorSpace = THREE.SRGBColorSpace;
 
       const pos = new Float32Array(count * 3);
-      const col = new Float32Array(count * 3);
       fireflyVel = new Float32Array(count * 3);
 
       for (let i = 0; i < count; i++) {
@@ -695,12 +737,6 @@
         pos[i*3+1] = y;
         pos[i*3+2] = Math.sin(ang) * r;
 
-        // 冰蓝偏白
-        col[i*3+0] = 0.70 + Math.random() * 0.10;
-        col[i*3+1] = 0.86 + Math.random() * 0.10;
-        col[i*3+2] = 1.00;
-
-        // 微速度
         fireflyVel[i*3+0] = (Math.random()-0.5) * 0.18;
         fireflyVel[i*3+1] = (Math.random()-0.5) * 0.10;
         fireflyVel[i*3+2] = (Math.random()-0.5) * 0.18;
@@ -708,9 +744,7 @@
 
       const geo = new THREE.BufferGeometry();
       fireflyPosAttr = new THREE.BufferAttribute(pos, 3);
-      fireflyColorAttr = new THREE.BufferAttribute(col, 3);
       geo.setAttribute('position', fireflyPosAttr);
-      geo.setAttribute('color', fireflyColorAttr);
 
       const mat = new THREE.PointsMaterial({
         size: 0.38,
@@ -718,8 +752,7 @@
         transparent: true,
         opacity: 0.70,
         depthWrite: false,
-        blending: THREE.AdditiveBlending,
-        vertexColors: true
+        blending: THREE.AdditiveBlending
       });
 
       fireflySystem = new THREE.Points(geo, mat);
@@ -735,18 +768,15 @@
       for (let i = 0; i < count; i++) {
         const ix = i*3;
 
-        // 漂移
         p[ix+0] += fireflyVel[ix+0] * dt;
         p[ix+1] += fireflyVel[ix+1] * dt;
         p[ix+2] += fireflyVel[ix+2] * dt;
 
-        // 环绕轻微“回旋”
         const swirl = 0.25 * Math.sin(t*0.7 + i*0.02);
         const x = p[ix+0], z = p[ix+2];
         p[ix+0] = x + (-z) * swirl * dt * 0.08;
         p[ix+2] = z + ( x) * swirl * dt * 0.08;
 
-        // 边界回收（保持在树附近）
         const r = Math.hypot(p[ix+0], p[ix+2]);
         if (r > 42) {
           const ang = Math.random() * Math.PI * 2;
@@ -760,13 +790,10 @@
       }
 
       fireflyPosAttr.needsUpdate = true;
-
-      // 让萤火跟随模式变化：散开时更活跃一点
-      if (fireflySystem.material) {
-        fireflySystem.material.opacity = (STATE.mode === 'SCATTER') ? 0.82 : 0.70;
-      }
+      fireflySystem.material.opacity = (STATE.mode === 'SCATTER') ? 0.82 : 0.70;
     }
 
+    // ===== 地面 =====
     function createFloor() {
       const geo = new THREE.CircleGeometry(22, 64);
       const mat = new THREE.MeshStandardMaterial({
@@ -781,6 +808,33 @@
       scene.add(floor);
     }
 
+    // ===== 纹理（糖条） =====
+    function createTextures() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128; canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, 128, 128);
+
+      ctx.fillStyle = '#6ecbff';
+      ctx.beginPath();
+      for (let i = -128; i < 256; i += 32) {
+        ctx.moveTo(i, 0);
+        ctx.lineTo(i + 32, 128);
+        ctx.lineTo(i + 16, 128);
+        ctx.lineTo(i - 16, 0);
+      }
+      ctx.fill();
+
+      caneTexture = new THREE.CanvasTexture(canvas);
+      caneTexture.wrapS = THREE.RepeatWrapping;
+      caneTexture.wrapT = THREE.RepeatWrapping;
+      caneTexture.repeat.set(3, 3);
+      caneTexture.colorSpace = THREE.SRGBColorSpace;
+    }
+
+    // ===== 雪花 =====
     function createSnow() {
       const geometry = new THREE.BufferGeometry();
       const vertices = [];
@@ -845,6 +899,7 @@
       snowSystem.geometry.attributes.position.needsUpdate = true;
     }
 
+    // ===== 粒子（树） =====
     class Particle {
       constructor(mesh, type, isDust = false) {
         this.mesh = mesh;
@@ -1034,7 +1089,7 @@
         particleSystem.push(new Particle(mesh, type, false));
       }
 
-      // Star topper
+      // Top Star
       const starShape = new THREE.Shape();
       const points = 5;
       for (let i = 0; i < points * 2; i++) {
@@ -1104,7 +1159,6 @@
 
     function updateGarlandBreath(t){
       if (!garlandMat) return;
-      // 灯带“呼吸”光：克制一点就很高级
       garlandMat.emissiveIntensity = 0.18 + 0.10 * (0.5 + 0.5 * Math.sin(t*1.2));
     }
 
@@ -1207,7 +1261,7 @@
       }
     }
 
-    // --- MEDIAPIPE ---
+    // ===== MEDIAPIPE =====
     function showMsg(txt) {
       const box = document.getElementById('msg-box');
       if (!box) return;
@@ -1305,10 +1359,12 @@
       }
     }
 
+    // ===== EVENTS =====
     function setupEvents() {
       window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
+
         renderer.setSize(window.innerWidth, window.innerHeight);
         composer.setSize(window.innerWidth, window.innerHeight);
       }, { passive: true });
@@ -1384,12 +1440,80 @@
       }, { passive: true });
     }
 
+    // ===== 电影感相机逻辑 =====
+    function updateCinematicCamera(dt, t){
+      // 目标注视点
+      if (STATE.mode === 'FOCUS' && STATE.focusTarget) {
+        // 注视照片（真实世界坐标）
+        STATE.focusTarget.getWorldPosition(CAM.lookTarget);
+
+        // 镜头推进：站在照片前一点点 + 轻微环绕
+        const orbit = 0.75 * Math.sin(t * 0.6);
+        CAM.posTarget.set(
+          orbit,
+          CAM.lookTarget.y + 0.45,
+          CAM.lookTarget.z - 12.5
+        );
+
+        // FOCUS 更“电影”：FOV 稍小一点
+        CAM.fovTarget = 38;
+
+        // DOF 开启 + 根据距离对焦
+        if (CONFIG.post.dofEnabled && bokehPass) {
+          bokehPass.enabled = true;
+          const focusDist = CAM.pos.distanceTo(CAM.lookTarget);
+          // BokehPass 里 focus 是距离
+          bokehPass.materialBokeh.uniforms.focus.value = focusDist;
+          bokehPass.materialBokeh.uniforms.aperture.value = CONFIG.post.dofAperture;
+          bokehPass.materialBokeh.uniforms.maxblur.value = CONFIG.post.dofMaxblur;
+        }
+
+        // FOCUS 时 Bloom 稍微收一点（避免过曝）
+        if (bloomPass) bloomPass.strength = 0.58;
+
+      } else {
+        // 常态：看树中心（世界原点附近）
+        CAM.lookTarget.set(0, 0.5, 0);
+
+        // 慢推拉 + 漂移（更高级的“镜头呼吸”）
+        const baseZ = CONFIG.camera.baseZ;
+        const dolly = 1.6 * Math.sin(t * 0.18) + 0.7 * Math.sin(t * 0.07);
+        const driftX = 1.1 * Math.sin(t * 0.12);
+        const driftY = 0.45 * Math.sin(t * 0.10);
+
+        // SCATTER 稍远一点点
+        const modeBoost = (STATE.mode === 'SCATTER') ? 4.0 : 0.0;
+
+        CAM.posTarget.set(
+          driftX,
+          2.0 + driftY,
+          baseZ + modeBoost + dolly
+        );
+
+        CAM.fovTarget = 42;
+
+        if (bokehPass) bokehPass.enabled = false;
+        if (bloomPass) bloomPass.strength = 0.62;
+      }
+
+      // 指数阻尼平滑
+      expDamp(CAM.pos, CAM.posTarget, CAM.smoothPos, dt);
+      expDamp(CAM.look, CAM.lookTarget, CAM.smoothLook, dt);
+
+      camera.position.copy(CAM.pos);
+      camera.lookAt(CAM.look);
+
+      camera.fov = expDampNum(camera.fov, CAM.fovTarget, CAM.smoothFov, dt);
+      camera.updateProjectionMatrix();
+    }
+
+    // ===== 主循环 =====
     function animate() {
       requestAnimationFrame(animate);
       const dt = clock.getDelta();
       const t = clock.elapsedTime;
 
-      // 旋转逻辑
+      // 旋转逻辑（你的原逻辑）
       if (STATE.hand.detected) {
         if (STATE.mode === 'SCATTER') {
           const targetRotY = STATE.hand.x * Math.PI * 0.9;
@@ -1400,7 +1524,7 @@
           STATE.rotation.y += 0.28 * dt;
         }
       } else if (STATE.touch.active) {
-        // 拖动中
+        // 拖动中 rotation 已更新
       } else {
         if (STATE.mode === 'TREE') {
           STATE.rotation.y += 0.26 * dt;
@@ -1419,14 +1543,35 @@
       updateFireflies(dt, t);
       updateGarlandBreath(t);
 
+      // 电影感相机更新（你要加的）
+      updateCinematicCamera(dt, t);
+
+      // 粒子更新
       particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
       updateSnow();
 
       composer.render();
     }
 
-    // --- 你原来的一些函数（createDust/createSnow等）之外，还缺一个 createSnow 的调用已在 init 中 ---
-    // --- 现在启动 ---
+    // ===== 灯带呼吸（已在 updateGarlandBreath）=====
+
+    // ===== 雪花系统依赖 snowSystem（已在 createSnow）=====
+
+    // ===== Dust / Photos / Preload 已有 =====
+
+    // ===== handle upload =====
+
+    // ===== createDust / etc =====
+
+    // ===== createDust / snow / photo =====
+
+    // ===== 雪花 / 其他 =====
+
+    // ===== createDust already above =====
+
+    // ===== createSnow already above =====
+
+    // ===== init =====
     init();
   </script>
 </body>
