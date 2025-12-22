@@ -1460,7 +1460,7 @@
 
         // DOF 开启 + 根据距离对焦
         if (CONFIG.post.dofEnabled && bokehPass) {
-          bokehPass.enabled = true;
+          bokehPass.enabled = false;
           const focusDist = CAM.pos.distanceTo(CAM.lookTarget);
           // BokehPass 里 focus 是距离
           bokehPass.materialBokeh.uniforms.focus.value = focusDist;
