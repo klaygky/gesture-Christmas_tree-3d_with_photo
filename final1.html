@@ -14,8 +14,8 @@
 
   <style>
     :root{
-      --ui-gold: rgba(210, 233, 255, 0.92);
-      --ui-ice: rgba(180, 225, 255, 0.70);
+      --ui-ice: rgba(190, 235, 255, 0.85);
+      --ui-ice2: rgba(220, 250, 255, 0.92);
       --ui-stroke: rgba(210, 233, 255, 0.22);
       --ui-bg: rgba(10, 18, 35, 0.35);
     }
@@ -23,9 +23,10 @@
     body {
       margin: 0;
       overflow: hidden;
-      background: radial-gradient(1200px 900px at 50% 35%, rgba(95, 190, 255, 0.16), rgba(10, 18, 35, 0.0) 55%),
-                  radial-gradient(900px 700px at 20% 65%, rgba(150, 120, 255, 0.10), rgba(10, 18, 35, 0.0) 60%),
-                  linear-gradient(180deg, #040816 0%, #040a18 45%, #030611 100%);
+      background:
+        radial-gradient(1200px 900px at 50% 35%, rgba(95, 190, 255, 0.16), rgba(10, 18, 35, 0.0) 55%),
+        radial-gradient(900px 700px at 20% 65%, rgba(150, 120, 255, 0.10), rgba(10, 18, 35, 0.0) 60%),
+        linear-gradient(180deg, #040816 0%, #040a18 45%, #030611 100%);
       background-color: #030611;
       font-family: 'Cinzel', 'Times New Roman', serif;
       touch-action: none;
@@ -41,7 +42,7 @@
       background-image:
         url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='.18'/%3E%3C/svg%3E");
       mix-blend-mode: overlay;
-      opacity: 0.14;
+      opacity: 0.12;
       pointer-events:none;
     }
     body::after{
@@ -63,6 +64,7 @@
     }
     #canvas-container:active { cursor: grabbing; }
 
+    /* UI Overlay */
     #ui-layer {
       position: absolute;
       top: 0; left: 0;
@@ -94,6 +96,7 @@
     }
     @media (min-width: 768px) { h1 { font-size: 52px; } }
 
+    /* Loading */
     #loader {
       position: absolute; top: 0; left: 0; width: 100%; height: 100%;
       background: radial-gradient(700px 520px at 50% 45%, rgba(130, 210, 255, 0.10), rgba(3, 6, 17, 1) 70%);
@@ -123,6 +126,7 @@
     }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
+    /* Message Box */
     #msg-box {
       position: absolute;
       top: 50%;
@@ -141,6 +145,7 @@
       box-shadow: 0 18px 40px rgba(0,0,0,0.35);
     }
 
+    /* Bottom bar */
     #surprise-bar {
       position: fixed;
       left: 50%;
@@ -152,11 +157,10 @@
       gap: 12px;
       align-items: center;
     }
-
     .control-btn {
       background: var(--ui-bg);
       border: 1px solid var(--ui-stroke);
-      color: var(--ui-gold);
+      color: var(--ui-ice2);
       padding: 11px 18px;
       cursor: pointer;
       letter-spacing: 2px;
@@ -182,9 +186,111 @@
       box-shadow: 0 18px 40px rgba(0,0,0,0.35), 0 0 26px rgba(140, 210, 255, 0.16);
     }
 
+    /* Hidden DOM to keep compatibility */
     #webcam-wrapper,
     #debug-info { display: none !important; }
     input[type="file"] { display: none; }
+
+    /* ===== 原图查看器（保持原分辨率） ===== */
+    #photo-viewer{
+      position: fixed;
+      inset: 0;
+      z-index: 400;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      pointer-events: auto;
+    }
+    #photo-viewer.show{ display: flex; }
+    .pv-backdrop{
+      position:absolute;
+      inset:0;
+      background: rgba(0,0,0,0.55);
+      backdrop-filter: blur(12px);
+    }
+    .pv-panel{
+      position: relative;
+      max-width: min(94vw, 980px);
+      width: 94vw;
+      max-height: 86vh;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid rgba(210,233,255,0.25);
+      background: rgba(10,18,35,0.35);
+      box-shadow: 0 26px 70px rgba(0,0,0,0.45);
+      display: flex;
+      flex-direction: column;
+    }
+    .pv-topbar{
+      display:flex;
+      align-items:center;
+      justify-content: space-between;
+      padding: 10px 12px;
+      background: rgba(10,18,35,0.55);
+      border-bottom: 1px solid rgba(210,233,255,0.15);
+    }
+    .pv-title{
+      color: rgba(230,250,255,0.92);
+      font-size: 12px;
+      letter-spacing: 2px;
+      opacity: 0.9;
+    }
+    .pv-close{
+      appearance:none;
+      border:none;
+      cursor:pointer;
+      color: rgba(230,250,255,0.92);
+      background: rgba(180,225,255,0.14);
+      border: 1px solid rgba(210,233,255,0.22);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      letter-spacing: 1px;
+    }
+    .pv-imgwrap{
+      flex: 1;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding: 10px;
+    }
+    #pv-img{
+      max-width: 100%;
+      max-height: 72vh;
+      object-fit: contain;
+      transform-origin: center center;
+      border-radius: 14px;
+      box-shadow: 0 14px 40px rgba(0,0,0,0.35);
+      background: rgba(0,0,0,0.25);
+    }
+    .pv-controls{
+      display:flex;
+      gap: 10px;
+      align-items:center;
+      justify-content: center;
+      padding: 10px 12px 14px;
+      background: rgba(10,18,35,0.40);
+      border-top: 1px solid rgba(210,233,255,0.12);
+    }
+    .pv-btn{
+      background: rgba(180,225,255,0.12);
+      border: 1px solid rgba(210,233,255,0.22);
+      color: rgba(230,250,255,0.92);
+      border-radius: 999px;
+      padding: 8px 14px;
+      font-size: 12px;
+      letter-spacing: 1px;
+      cursor: pointer;
+    }
+    .pv-hint{
+      color: rgba(230,250,255,0.7);
+      font-size: 11px;
+      letter-spacing: 1px;
+      opacity: 0.85;
+    }
+
+    /* viewer open: disable canvas pointer */
+    body.pv-open #canvas-container{ pointer-events:none; }
   </style>
 
   <style>
@@ -222,21 +328,43 @@
     <input type="file" id="file-input" multiple accept="image/*" />
   </div>
 
+  <!-- 背景音乐 -->
   <audio id="bgm" src="./music/memories.mp3" preload="auto" loop></audio>
 
+  <!-- hidden dom for mediapipe -->
   <div id="webcam-wrapper">
     <video id="webcam" autoplay playsinline webkit-playsinline></video>
   </div>
   <div id="debug-info"></div>
+
+  <!-- 原图查看器 -->
+  <div id="photo-viewer" aria-hidden="true">
+    <div class="pv-backdrop" id="pv-backdrop"></div>
+    <div class="pv-panel">
+      <div class="pv-topbar">
+        <div class="pv-title">ORIGINAL PHOTO</div>
+        <button class="pv-close" id="pv-close">✕ Close</button>
+      </div>
+      <div class="pv-imgwrap">
+        <img id="pv-img" alt="photo"/>
+      </div>
+      <div class="pv-controls">
+        <button class="pv-btn" id="pv-zoom-out">－</button>
+        <button class="pv-btn" id="pv-zoom-reset">Reset</button>
+        <button class="pv-btn" id="pv-zoom-in">＋</button>
+        <span class="pv-hint">在 FOCUS 再点一次同一张照片即可打开原图</span>
+      </div>
+    </div>
+  </div>
 
   <script type="module">
     import * as THREE from 'three';
     import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-    import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { Lensflare, LensflareElement } from 'three/addons/objects/Lensflare.js';
     import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
     // ===== DOM =====
@@ -247,14 +375,41 @@
     const fileInput = document.getElementById('file-input');
     const folderInput = document.getElementById('folder-input');
 
+    // viewer dom
+    const pv = document.getElementById('photo-viewer');
+    const pvImg = document.getElementById('pv-img');
+    const pvClose = document.getElementById('pv-close');
+    const pvBackdrop = document.getElementById('pv-backdrop');
+    const pvZoomIn = document.getElementById('pv-zoom-in');
+    const pvZoomOut = document.getElementById('pv-zoom-out');
+    const pvZoomReset = document.getElementById('pv-zoom-reset');
+
     function setDebug(t) { if (debugInfo) debugInfo.textContent = t; }
 
-    // ===== Music =====
+    // ===== Music + analyser (高级：音乐律动) =====
     let musicOn = false;
+    let audioCtx = null, analyser = null, freqData = null;
+    let musicEnergy = 0;
+
+    function ensureAnalyser(){
+      if (analyser) return;
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC || !bgm) return;
+      audioCtx = new AC();
+      const src = audioCtx.createMediaElementSource(bgm);
+      analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 256;
+      freqData = new Uint8Array(analyser.frequencyBinCount);
+      src.connect(analyser);
+      analyser.connect(audioCtx.destination);
+    }
+
     async function setMusic(on) {
       if (!bgm) return;
       try {
         if (on) {
+          ensureAnalyser();
+          if (audioCtx && audioCtx.state === 'suspended') await audioCtx.resume();
           bgm.volume = 0.28;
           await bgm.play();
           musicOn = true;
@@ -267,6 +422,29 @@
       } catch (e) {
         console.warn("Music play failed:", e);
       }
+    }
+
+    function updateMusicEnergy(){
+      if (!analyser || !musicOn || !freqData) {
+        musicEnergy *= 0.92;
+        return;
+      }
+      analyser.getByteFrequencyData(freqData);
+
+      // 更高级一点：偏向低频（更像节奏）
+      const n = freqData.length;
+      const bassN = Math.max(6, Math.floor(n * 0.22));
+      let sumBass = 0;
+      for (let i = 0; i < bassN; i++) sumBass += freqData[i];
+      let bass = (sumBass / bassN) / 255;
+
+      // 再混一点全频，避免太抖
+      let sumAll = 0;
+      for (let i = 0; i < n; i++) sumAll += freqData[i];
+      let all = (sumAll / n) / 255;
+
+      const target = Math.min(1, bass * 1.55 + all * 0.45);
+      musicEnergy += (target - musicEnergy) * 0.08;
     }
 
     // ===== CONFIG =====
@@ -285,23 +463,16 @@
         snowCount: 1100,
         treeHeight: 24,
         treeRadius: 8,
-
         starCount: 1400,
         starMinR: 90,
         starMaxR: 260,
-
         fireflyCount: 260
       },
       camera: {
         baseZ: 50
       },
-      post: {
-        // 电影感景深：只在 FOCUS 开启（很克制）
-        dofEnabled: true,
-        dofAperture: 0.010, // 越大越“糊”，建议 0.006~0.016
-        dofMaxblur: 0.010,  // 建议 0.006~0.018
-        vignetteOffset: 1.05,
-        vignetteDarkness: 1.08
+      render: {
+        maxDPR: 3
       },
       preload: {
         autoScanLocal: true,
@@ -332,32 +503,59 @@
     let mouse = new THREE.Vector2();
     let isCameraRunning = false;
 
-    // 星空
+    // 星空/极光/萤火/灯带
     let starSystem = null;
     let starColorAttr = null;
     let starBase = null;
     let starPhase = null;
     let starSpeed = null;
 
-    // 极光
     let auroraMesh = null;
     let auroraMat = null;
 
-    // 萤火
     let fireflySystem = null;
     let fireflyPosAttr = null;
     let fireflyVel = null;
 
-    // 灯带
     let garland = null;
     let garlandMat = null;
 
     // 后期
-    let bokehPass = null;
     let bloomPass = null;
     let vignettePass = null;
 
-    // ===== 电影感相机（核心）=====
+    // lens flare
+    let flareLight = null;
+
+    // ===== viewer state =====
+    let pvScale = 1;
+    function setPVScale(s){
+      pvScale = Math.max(1, Math.min(4, s));
+      pvImg.style.transform = `scale(${pvScale})`;
+    }
+    function openPhotoViewer(src){
+      if (!src) return;
+      document.body.classList.add('pv-open');
+      pv.classList.add('show');
+      pv.setAttribute('aria-hidden', 'false');
+      pvImg.src = src;
+      setPVScale(1);
+    }
+    function closePhotoViewer(){
+      pv.classList.remove('show');
+      pv.setAttribute('aria-hidden', 'true');
+      pvImg.src = '';
+      document.body.classList.remove('pv-open');
+    }
+
+    pvClose?.addEventListener('click', closePhotoViewer);
+    pvBackdrop?.addEventListener('click', closePhotoViewer);
+    pvZoomIn?.addEventListener('click', () => setPVScale(pvScale * 1.25));
+    pvZoomOut?.addEventListener('click', () => setPVScale(pvScale / 1.25));
+    pvZoomReset?.addEventListener('click', () => setPVScale(1));
+    pvImg?.addEventListener('dblclick', () => setPVScale(pvScale === 1 ? 2 : 1));
+
+    // ===== cinematic camera (无景深，保证照片清晰) =====
     const CAM = {
       pos: new THREE.Vector3(0, 2, CONFIG.camera.baseZ),
       look: new THREE.Vector3(0, 0, 0),
@@ -369,11 +567,7 @@
       smoothFov: 6.0
     };
 
-    const tmpV3A = new THREE.Vector3();
-    const tmpV3B = new THREE.Vector3();
-
-    function expDamp(current, target, lambda, dt) {
-      // smooth step: current += (target-current)*(1-exp(-lambda*dt))
+    function expDampVec(current, target, lambda, dt) {
       const t = 1 - Math.exp(-lambda * dt);
       current.lerp(target, t);
     }
@@ -382,6 +576,94 @@
       return current + (target - current) * t;
     }
 
+    function updateCinematicCamera(dt, t){
+      if (STATE.mode === 'FOCUS' && STATE.focusTarget) {
+        STATE.focusTarget.getWorldPosition(CAM.lookTarget);
+        const orbit = 0.75 * Math.sin(t * 0.6);
+        CAM.posTarget.set(
+          orbit,
+          CAM.lookTarget.y + 0.45,
+          CAM.lookTarget.z - 12.5
+        );
+        CAM.fovTarget = 38;
+
+        // FOCUS 时 bloom 更克制，避免把照片糊成一团光
+        if (bloomPass) bloomPass.strength = 0.50 + musicEnergy * 0.08;
+      } else {
+        CAM.lookTarget.set(0, 0.5, 0);
+        const baseZ = CONFIG.camera.baseZ;
+        const dolly = 1.6 * Math.sin(t * 0.18) + 0.7 * Math.sin(t * 0.07);
+        const driftX = 1.1 * Math.sin(t * 0.12);
+        const driftY = 0.45 * Math.sin(t * 0.10);
+        const modeBoost = (STATE.mode === 'SCATTER') ? 4.0 : 0.0;
+
+        CAM.posTarget.set(
+          driftX,
+          2.0 + driftY,
+          baseZ + modeBoost + dolly
+        );
+        CAM.fovTarget = 42;
+
+        // 音乐律动：bloom 随节奏微微起伏
+        if (bloomPass) bloomPass.strength = 0.60 + musicEnergy * 0.22;
+      }
+
+      expDampVec(CAM.pos, CAM.posTarget, CAM.smoothPos, dt);
+      expDampVec(CAM.look, CAM.lookTarget, CAM.smoothLook, dt);
+
+      camera.position.copy(CAM.pos);
+      camera.lookAt(CAM.look);
+
+      camera.fov = expDampNum(camera.fov, CAM.fovTarget, CAM.smoothFov, dt);
+      camera.updateProjectionMatrix();
+
+      // flare light 跟随相机微动
+      if (flareLight) {
+        flareLight.intensity = 1.0 + musicEnergy * 0.25;
+      }
+    }
+
+    // ===== helpers =====
+    function showMsg(txt) {
+      const box = document.getElementById('msg-box');
+      if (!box) return;
+      box.innerText = txt;
+      box.style.display = 'block';
+      setTimeout(() => { box.style.display = 'none'; }, 2500);
+    }
+
+    function computeDPR(){
+      let dpr = Math.min(window.devicePixelRatio || 1, CONFIG.render.maxDPR);
+      // 自动保护：超大分辨率设备避免爆炸
+      const mp = (window.innerWidth * window.innerHeight * dpr * dpr) / 1e6;
+      if (mp > 10) dpr = Math.min(dpr, 2);
+      return dpr;
+    }
+
+    function isPOT(n){ return (n & (n - 1)) === 0; }
+
+    function tunePhotoTexture(tex, src){
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.userData = tex.userData || {};
+      tex.userData.src = src;
+
+      const maxAniso = renderer?.capabilities?.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1;
+      tex.anisotropy = Math.min(8, maxAniso);
+
+      // NPOT 图片不能开 mipmap（否则会自动降质/模糊），这里按实际尺寸判断
+      if (tex.image && isPOT(tex.image.width) && isPOT(tex.image.height)) {
+        tex.generateMipmaps = true;
+        tex.minFilter = THREE.LinearMipmapLinearFilter;
+      } else {
+        tex.generateMipmaps = false;
+        tex.minFilter = THREE.LinearFilter;
+      }
+      tex.magFilter = THREE.LinearFilter;
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    // ===== init =====
     async function init() {
       initThree();
       setupEnvironment();
@@ -419,12 +701,13 @@
       camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1200);
       camera.position.set(0, 2, CONFIG.camera.baseZ);
 
+      const dpr = computeDPR();
       renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
       renderer.setSize(window.innerWidth, window.innerHeight);
-      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setPixelRatio(dpr);
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
-      renderer.toneMappingExposure = 1.6;
+      renderer.toneMappingExposure = 1.45;
       container.appendChild(renderer.domElement);
 
       mainGroup = new THREE.Group();
@@ -461,35 +744,24 @@
       scene.add(fill);
     }
 
-    // ===== 后期：Render -> DOF(FOCUS) -> Bloom -> Vignette =====
     function setupPostProcessing() {
       composer = new EffectComposer(renderer);
       composer.addPass(new RenderPass(scene, camera));
 
-      // DOF（只在 FOCUS 开启）
-      bokehPass = new BokehPass(scene, camera, {
-        focus: 40.0,
-        aperture: CONFIG.post.dofAperture,
-        maxblur: CONFIG.post.dofMaxblur
-      });
-      bokehPass.enabled = false;
-      composer.addPass(bokehPass);
-
       bloomPass = new UnrealBloomPass(
         new THREE.Vector2(window.innerWidth, window.innerHeight),
-        1.05, 0.45, 0.9
+        0.62, 0.45, 0.92
       );
-      bloomPass.threshold = 0.7;
-      bloomPass.strength = 0.62;
-      bloomPass.radius = 0.35;
+      bloomPass.threshold = 0.74; // 更高阈值：减少把照片“糊成光”
+      bloomPass.strength = 0.60;
+      bloomPass.radius = 0.32;
       composer.addPass(bloomPass);
 
-      // 电影暗角（轻）
       const VignetteShader = {
         uniforms: {
           tDiffuse: { value: null },
-          offset: { value: CONFIG.post.vignetteOffset },
-          darkness: { value: CONFIG.post.vignetteDarkness }
+          offset: { value: 1.05 },
+          darkness: { value: 1.08 }
         },
         vertexShader: `
           varying vec2 vUv;
@@ -508,19 +780,21 @@
             vec4 color = texture2D(tDiffuse, vUv);
             vec2 uv = (vUv - vec2(0.5)) * offset;
             float vig = smoothstep(0.85, 0.30, dot(uv, uv));
-            // 让暗角更柔
             float v = pow(vig, darkness);
             color.rgb *= v;
             gl_FragColor = color;
           }
         `
       };
-
       vignettePass = new ShaderPass(VignetteShader);
       composer.addPass(vignettePass);
+
+      // composer 也跟 DPR（如果有该 API）
+      const dpr = computeDPR();
+      if (composer.setPixelRatio) composer.setPixelRatio(dpr);
     }
 
-    // ===== 背景极光 =====
+    // ===== 极光 =====
     function createAuroraDome() {
       const geo = new THREE.SphereGeometry(420, 48, 32);
 
@@ -531,7 +805,7 @@
         blending: THREE.AdditiveBlending,
         uniforms: {
           uTime: { value: 0 },
-          uOpacity: { value: 0.35 },
+          uOpacity: { value: 0.34 },
           uColorA: { value: new THREE.Color(0x6fd2ff) },
           uColorB: { value: new THREE.Color(0xb9a2ff) },
           uColorC: { value: new THREE.Color(0xffffff) }
@@ -557,7 +831,6 @@
             p += dot(p,p+45.32);
             return fract(p.x*p.y);
           }
-
           float noise(vec2 p){
             vec2 i = floor(p);
             vec2 f = fract(p);
@@ -607,6 +880,7 @@
     function updateAurora(t){
       if (!auroraMat) return;
       auroraMat.uniforms.uTime.value = t;
+      auroraMat.uniforms.uOpacity.value = 0.32 + musicEnergy * 0.10; // 轻微跟随音乐
       if (auroraMesh){
         auroraMesh.rotation.y = t * 0.02;
         auroraMesh.rotation.x = Math.sin(t*0.07) * 0.02;
@@ -705,92 +979,7 @@
       starSystem.rotation.y = -STATE.rotation.y * 0.15;
       starSystem.rotation.x = -STATE.rotation.x * 0.08;
       starSystem.position.copy(camera.position);
-    }
-
-    // ===== 萤火 =====
-    function createFireflies() {
-      const count = CONFIG.particles.fireflyCount;
-
-      const c = document.createElement('canvas');
-      c.width = 48; c.height = 48;
-      const ctx = c.getContext('2d');
-      const grad = ctx.createRadialGradient(24, 24, 0, 24, 24, 24);
-      grad.addColorStop(0, 'rgba(255,255,255,1)');
-      grad.addColorStop(0.25, 'rgba(170,230,255,0.85)');
-      grad.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(24, 24, 24, 0, Math.PI*2);
-      ctx.fill();
-      const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace;
-
-      const pos = new Float32Array(count * 3);
-      fireflyVel = new Float32Array(count * 3);
-
-      for (let i = 0; i < count; i++) {
-        const r = 10 + Math.random() * 26;
-        const ang = Math.random() * Math.PI * 2;
-        const y = (Math.random() - 0.5) * 16;
-
-        pos[i*3+0] = Math.cos(ang) * r;
-        pos[i*3+1] = y;
-        pos[i*3+2] = Math.sin(ang) * r;
-
-        fireflyVel[i*3+0] = (Math.random()-0.5) * 0.18;
-        fireflyVel[i*3+1] = (Math.random()-0.5) * 0.10;
-        fireflyVel[i*3+2] = (Math.random()-0.5) * 0.18;
-      }
-
-      const geo = new THREE.BufferGeometry();
-      fireflyPosAttr = new THREE.BufferAttribute(pos, 3);
-      geo.setAttribute('position', fireflyPosAttr);
-
-      const mat = new THREE.PointsMaterial({
-        size: 0.38,
-        map: tex,
-        transparent: true,
-        opacity: 0.70,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-      });
-
-      fireflySystem = new THREE.Points(geo, mat);
-      mainGroup.add(fireflySystem);
-    }
-
-    function updateFireflies(dt, t){
-      if (!fireflySystem || !fireflyPosAttr || !fireflyVel) return;
-
-      const p = fireflyPosAttr.array;
-      const count = CONFIG.particles.fireflyCount;
-
-      for (let i = 0; i < count; i++) {
-        const ix = i*3;
-
-        p[ix+0] += fireflyVel[ix+0] * dt;
-        p[ix+1] += fireflyVel[ix+1] * dt;
-        p[ix+2] += fireflyVel[ix+2] * dt;
-
-        const swirl = 0.25 * Math.sin(t*0.7 + i*0.02);
-        const x = p[ix+0], z = p[ix+2];
-        p[ix+0] = x + (-z) * swirl * dt * 0.08;
-        p[ix+2] = z + ( x) * swirl * dt * 0.08;
-
-        const r = Math.hypot(p[ix+0], p[ix+2]);
-        if (r > 42) {
-          const ang = Math.random() * Math.PI * 2;
-          const rr = 10 + Math.random() * 22;
-          p[ix+0] = Math.cos(ang) * rr;
-          p[ix+2] = Math.sin(ang) * rr;
-          p[ix+1] = (Math.random()-0.5) * 16;
-        }
-        if (p[ix+1] > 14) p[ix+1] = -14;
-        if (p[ix+1] < -14) p[ix+1] = 14;
-      }
-
-      fireflyPosAttr.needsUpdate = true;
-      fireflySystem.material.opacity = (STATE.mode === 'SCATTER') ? 0.82 : 0.70;
+      starSystem.material.opacity = 0.86 + musicEnergy * 0.08;
     }
 
     // ===== 地面 =====
@@ -798,7 +987,7 @@
       const geo = new THREE.CircleGeometry(22, 64);
       const mat = new THREE.MeshStandardMaterial({
         color: 0x050a18,
-        metalness: 0.15,
+        metalness: 0.12,
         roughness: 0.95,
         envMapIntensity: 0.25
       });
@@ -808,7 +997,7 @@
       scene.add(floor);
     }
 
-    // ===== 纹理（糖条） =====
+    // ===== 糖条纹理 =====
     function createTextures() {
       const canvas = document.createElement('canvas');
       canvas.width = 128; canvas.height = 128;
@@ -834,7 +1023,7 @@
       caneTexture.colorSpace = THREE.SRGBColorSpace;
     }
 
-    // ===== 雪花 =====
+    // ===== 雪 =====
     function createSnow() {
       const geometry = new THREE.BufferGeometry();
       const vertices = [];
@@ -883,12 +1072,15 @@
       const positions = snowSystem.geometry.attributes.position.array;
       const userData = snowSystem.geometry.attributes.userData.array;
 
+      // 风：跟随音乐一点点（高级但克制）
+      const wind = 0.10 + musicEnergy * 0.26;
+
       for (let i = 0; i < CONFIG.particles.snowCount; i++) {
         const fallSpeed = userData[i * 2];
         positions[i * 3 + 1] -= fallSpeed;
 
         const swaySpeed = userData[i * 2 + 1];
-        positions[i * 3] += Math.sin(clock.elapsedTime * 2 + i) * swaySpeed * 0.12;
+        positions[i * 3] += Math.sin(clock.elapsedTime * 2 + i) * swaySpeed * (0.10 + wind * 0.08);
 
         if (positions[i * 3 + 1] < -34) {
           positions[i * 3 + 1] = 34;
@@ -899,7 +1091,7 @@
       snowSystem.geometry.attributes.position.needsUpdate = true;
     }
 
-    // ===== 粒子（树） =====
+    // ===== 粒子 =====
     class Particle {
       constructor(mesh, type, isDust = false) {
         this.mesh = mesh;
@@ -995,7 +1187,6 @@
         } else if (mode === 'FOCUS') {
           s = (this.mesh === focusTargetMesh) ? 4.5 : (this.baseScale * 0.82);
         }
-
         this.mesh.scale.lerp(new THREE.Vector3(s, s, s), 4 * dt);
       }
     }
@@ -1033,7 +1224,7 @@
 
       const iceMat = new THREE.MeshPhysicalMaterial({
         color: CONFIG.colors.iceBlue,
-        metalness: 0.12,
+        metalness: 0.10,
         roughness: 0.18,
         clearcoat: 1.0,
         clearcoatRoughness: 0.08,
@@ -1055,7 +1246,7 @@
 
       const auroraMat2 = new THREE.MeshPhysicalMaterial({
         color: CONFIG.colors.auroraViolet,
-        metalness: 0.25,
+        metalness: 0.22,
         roughness: 0.22,
         clearcoat: 1.0,
         clearcoatRoughness: 0.12,
@@ -1123,6 +1314,33 @@
       star.position.set(0, CONFIG.particles.treeHeight / 2 + 1.25, 0);
       mainGroup.add(star);
 
+      // Lens flare (很轻的高级感点缀)
+      flareLight = new THREE.PointLight(0xffffff, 1.0, 80);
+      flareLight.position.copy(star.position).add(new THREE.Vector3(0, 0.6, 2.5));
+      scene.add(flareLight);
+
+      const flareTex = (() => {
+        const c = document.createElement('canvas');
+        c.width = 128; c.height = 128;
+        const ctx = c.getContext('2d');
+        const grd = ctx.createRadialGradient(64,64,0,64,64,64);
+        grd.addColorStop(0, 'rgba(255,255,255,1)');
+        grd.addColorStop(0.20, 'rgba(210,245,255,0.45)');
+        grd.addColorStop(0.55, 'rgba(170,220,255,0.18)');
+        grd.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grd;
+        ctx.beginPath(); ctx.arc(64,64,64,0,Math.PI*2); ctx.fill();
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        return t;
+      })();
+
+      const lensflare = new Lensflare();
+      lensflare.addElement(new LensflareElement(flareTex, 180, 0.0));
+      lensflare.addElement(new LensflareElement(flareTex, 90, 0.35));
+      lensflare.addElement(new LensflareElement(flareTex, 60, 0.65));
+      flareLight.add(lensflare);
+
       mainGroup.add(photoMeshGroup);
     }
 
@@ -1149,7 +1367,7 @@
         clearcoat: 1.0,
         clearcoatRoughness: 0.08,
         emissive: 0x3aa7ff,
-        emissiveIntensity: 0.22,
+        emissiveIntensity: 0.20,
         envMapIntensity: 1.2
       });
 
@@ -1159,7 +1377,92 @@
 
     function updateGarlandBreath(t){
       if (!garlandMat) return;
-      garlandMat.emissiveIntensity = 0.18 + 0.10 * (0.5 + 0.5 * Math.sin(t*1.2));
+      const breath = 0.16 + 0.08 * (0.5 + 0.5 * Math.sin(t*1.2));
+      garlandMat.emissiveIntensity = breath + musicEnergy * 0.22;
+    }
+
+    function createFireflies() {
+      const count = CONFIG.particles.fireflyCount;
+
+      const c = document.createElement('canvas');
+      c.width = 48; c.height = 48;
+      const ctx = c.getContext('2d');
+      const grad = ctx.createRadialGradient(24, 24, 0, 24, 24, 24);
+      grad.addColorStop(0, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.25, 'rgba(170,230,255,0.85)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(24, 24, 24, 0, Math.PI*2);
+      ctx.fill();
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+
+      const pos = new Float32Array(count * 3);
+      fireflyVel = new Float32Array(count * 3);
+
+      for (let i = 0; i < count; i++) {
+        const r = 10 + Math.random() * 26;
+        const ang = Math.random() * Math.PI * 2;
+        const y = (Math.random() - 0.5) * 16;
+
+        pos[i*3+0] = Math.cos(ang) * r;
+        pos[i*3+1] = y;
+        pos[i*3+2] = Math.sin(ang) * r;
+
+        fireflyVel[i*3+0] = (Math.random()-0.5) * 0.18;
+        fireflyVel[i*3+1] = (Math.random()-0.5) * 0.10;
+        fireflyVel[i*3+2] = (Math.random()-0.5) * 0.18;
+      }
+
+      const geo = new THREE.BufferGeometry();
+      fireflyPosAttr = new THREE.BufferAttribute(pos, 3);
+      geo.setAttribute('position', fireflyPosAttr);
+
+      const mat = new THREE.PointsMaterial({
+        size: 0.38,
+        map: tex,
+        transparent: true,
+        opacity: 0.70,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+
+      fireflySystem = new THREE.Points(geo, mat);
+      mainGroup.add(fireflySystem);
+    }
+
+    function updateFireflies(dt, t){
+      if (!fireflySystem || !fireflyPosAttr || !fireflyVel) return;
+
+      const p = fireflyPosAttr.array;
+      const count = CONFIG.particles.fireflyCount;
+
+      for (let i = 0; i < count; i++) {
+        const ix = i*3;
+        p[ix+0] += fireflyVel[ix+0] * dt;
+        p[ix+1] += fireflyVel[ix+1] * dt;
+        p[ix+2] += fireflyVel[ix+2] * dt;
+
+        const swirl = 0.25 * Math.sin(t*0.7 + i*0.02);
+        const x = p[ix+0], z = p[ix+2];
+        p[ix+0] = x + (-z) * swirl * dt * 0.08;
+        p[ix+2] = z + ( x) * swirl * dt * 0.08;
+
+        const r = Math.hypot(p[ix+0], p[ix+2]);
+        if (r > 42) {
+          const ang = Math.random() * Math.PI * 2;
+          const rr = 10 + Math.random() * 22;
+          p[ix+0] = Math.cos(ang) * rr;
+          p[ix+2] = Math.sin(ang) * rr;
+          p[ix+1] = (Math.random()-0.5) * 16;
+        }
+        if (p[ix+1] > 14) p[ix+1] = -14;
+        if (p[ix+1] < -14) p[ix+1] = 14;
+      }
+
+      fireflyPosAttr.needsUpdate = true;
+      fireflySystem.material.opacity = 0.66 + musicEnergy * 0.14;
     }
 
     function createDust() {
@@ -1195,9 +1498,9 @@
       const photoGeo = new THREE.PlaneGeometry(width, height);
       const photoMat = new THREE.MeshBasicMaterial({
         map: texture,
-        side: THREE.DoubleSide,
-        transparent: true
+        side: THREE.DoubleSide
       });
+      photoMat.toneMapped = false; // 关键：让照片不被 toneMapping 影响太狠（更清晰）
       const photo = new THREE.Mesh(photoGeo, photoMat);
       photo.position.z = 0.045;
 
@@ -1208,6 +1511,9 @@
       frame.scale.set(width / 1.2, height / 1.2, 1);
       group.scale.set(0.82, 0.82, 0.82);
 
+      // 保存原图 src，用于“原图查看器”
+      group.userData.photoSrc = texture.userData?.src || null;
+
       photoMeshGroup.add(group);
       particleSystem.push(new Particle(group, 'PHOTO', false));
       updatePhotoLayout();
@@ -1217,12 +1523,15 @@
       const files = e.target.files;
       if (!files || !files.length) return;
 
+      const loader = new THREE.TextureLoader();
+
       Array.from(files).forEach(f => {
         if (!f.type.startsWith('image/')) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
-          new THREE.TextureLoader().load(ev.target.result, (t) => {
-            t.colorSpace = THREE.SRGBColorSpace;
+          const src = ev.target.result;
+          loader.load(src, (t) => {
+            tunePhotoTexture(t, src);
             addPhotoToScene(t);
           });
         };
@@ -1237,7 +1546,7 @@
         CONFIG.preload.cloudImageUrls.forEach(url => {
           loader.load(
             url,
-            (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); },
+            (t) => { tunePhotoTexture(t, url); addPhotoToScene(t); },
             undefined,
             () => { console.warn("Failed to load cloud image:", url); }
           );
@@ -1249,27 +1558,15 @@
           const name = String(i).padStart(2, "0");
           const pathJpg = `./images/${name}.jpg`;
           const pathPng = `./images/${name}.png`;
-          loader.load(
-            pathJpg,
-            (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); },
-            undefined,
-            () => {
-              loader.load(pathPng, (t) => { t.colorSpace = THREE.SRGBColorSpace; addPhotoToScene(t); }, undefined, () => { });
-            }
-          );
+
+          loader.load(pathJpg, (t) => { tunePhotoTexture(t, pathJpg); addPhotoToScene(t); }, undefined, () => {
+            loader.load(pathPng, (t) => { tunePhotoTexture(t, pathPng); addPhotoToScene(t); }, undefined, () => { });
+          });
         }
       }
     }
 
     // ===== MEDIAPIPE =====
-    function showMsg(txt) {
-      const box = document.getElementById('msg-box');
-      if (!box) return;
-      box.innerText = txt;
-      box.style.display = 'block';
-      setTimeout(() => { box.style.display = 'none'; }, 3000);
-    }
-
     async function initMediaPipe() {
       if (isCameraRunning) return;
 
@@ -1362,11 +1659,14 @@
     // ===== EVENTS =====
     function setupEvents() {
       window.addEventListener('resize', () => {
+        const dpr = computeDPR();
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
 
+        renderer.setPixelRatio(dpr);
         renderer.setSize(window.innerWidth, window.innerHeight);
         composer.setSize(window.innerWidth, window.innerHeight);
+        if (composer.setPixelRatio) composer.setPixelRatio(dpr);
       }, { passive: true });
 
       if (fileInput) fileInput.addEventListener('change', handleImageUpload);
@@ -1412,25 +1712,35 @@
         STATE.touch.active = false;
         if (wasDragging) return;
 
+        // viewer 开着就不处理 3D 点击
+        if (pv.classList.contains('show')) return;
+
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
 
         const intersects = raycaster.intersectObjects(mainGroup.children, true);
 
-        let clickedPhoto = null;
+        let clickedParticle = null;
         for (let hit of intersects) {
           let obj = hit.object;
           while (obj.parent && obj.parent !== mainGroup && obj.parent !== photoMeshGroup) {
             obj = obj.parent;
           }
-          const particle = particleSystem.find(p => p.mesh === obj && p.type === 'PHOTO');
-          if (particle) { clickedPhoto = particle; break; }
+          const p = particleSystem.find(pp => pp.mesh === obj && pp.type === 'PHOTO');
+          if (p) { clickedParticle = p; break; }
         }
 
-        if (clickedPhoto) {
-          STATE.mode = 'FOCUS';
-          STATE.focusTarget = clickedPhoto.mesh;
+        if (clickedParticle) {
+          // 规则：第一次点 -> FOCUS；FOCUS 状态再点同一张 -> 打开原图
+          if (STATE.mode === 'FOCUS' && STATE.focusTarget === clickedParticle.mesh) {
+            const src = clickedParticle.mesh.userData?.photoSrc;
+            if (src) openPhotoViewer(src);
+            else showMsg("找不到原图源（photoSrc）");
+          } else {
+            STATE.mode = 'FOCUS';
+            STATE.focusTarget = clickedParticle.mesh;
+          }
         } else {
           if (STATE.mode === 'FOCUS') {
             STATE.mode = 'TREE';
@@ -1440,80 +1750,15 @@
       }, { passive: true });
     }
 
-    // ===== 电影感相机逻辑 =====
-    function updateCinematicCamera(dt, t){
-      // 目标注视点
-      if (STATE.mode === 'FOCUS' && STATE.focusTarget) {
-        // 注视照片（真实世界坐标）
-        STATE.focusTarget.getWorldPosition(CAM.lookTarget);
-
-        // 镜头推进：站在照片前一点点 + 轻微环绕
-        const orbit = 0.75 * Math.sin(t * 0.6);
-        CAM.posTarget.set(
-          orbit,
-          CAM.lookTarget.y + 0.45,
-          CAM.lookTarget.z - 12.5
-        );
-
-        // FOCUS 更“电影”：FOV 稍小一点
-        CAM.fovTarget = 38;
-
-        // DOF 开启 + 根据距离对焦
-        if (CONFIG.post.dofEnabled && bokehPass) {
-          bokehPass.enabled = false;
-          const focusDist = CAM.pos.distanceTo(CAM.lookTarget);
-          // BokehPass 里 focus 是距离
-          bokehPass.materialBokeh.uniforms.focus.value = focusDist;
-          bokehPass.materialBokeh.uniforms.aperture.value = CONFIG.post.dofAperture;
-          bokehPass.materialBokeh.uniforms.maxblur.value = CONFIG.post.dofMaxblur;
-        }
-
-        // FOCUS 时 Bloom 稍微收一点（避免过曝）
-        if (bloomPass) bloomPass.strength = 0.58;
-
-      } else {
-        // 常态：看树中心（世界原点附近）
-        CAM.lookTarget.set(0, 0.5, 0);
-
-        // 慢推拉 + 漂移（更高级的“镜头呼吸”）
-        const baseZ = CONFIG.camera.baseZ;
-        const dolly = 1.6 * Math.sin(t * 0.18) + 0.7 * Math.sin(t * 0.07);
-        const driftX = 1.1 * Math.sin(t * 0.12);
-        const driftY = 0.45 * Math.sin(t * 0.10);
-
-        // SCATTER 稍远一点点
-        const modeBoost = (STATE.mode === 'SCATTER') ? 4.0 : 0.0;
-
-        CAM.posTarget.set(
-          driftX,
-          2.0 + driftY,
-          baseZ + modeBoost + dolly
-        );
-
-        CAM.fovTarget = 42;
-
-        if (bokehPass) bokehPass.enabled = false;
-        if (bloomPass) bloomPass.strength = 0.62;
-      }
-
-      // 指数阻尼平滑
-      expDamp(CAM.pos, CAM.posTarget, CAM.smoothPos, dt);
-      expDamp(CAM.look, CAM.lookTarget, CAM.smoothLook, dt);
-
-      camera.position.copy(CAM.pos);
-      camera.lookAt(CAM.look);
-
-      camera.fov = expDampNum(camera.fov, CAM.fovTarget, CAM.smoothFov, dt);
-      camera.updateProjectionMatrix();
-    }
-
-    // ===== 主循环 =====
+    // ===== animation loop =====
     function animate() {
       requestAnimationFrame(animate);
       const dt = clock.getDelta();
       const t = clock.elapsedTime;
 
-      // 旋转逻辑（你的原逻辑）
+      updateMusicEnergy();
+
+      // rotation
       if (STATE.hand.detected) {
         if (STATE.mode === 'SCATTER') {
           const targetRotY = STATE.hand.x * Math.PI * 0.9;
@@ -1524,7 +1769,7 @@
           STATE.rotation.y += 0.28 * dt;
         }
       } else if (STATE.touch.active) {
-        // 拖动中 rotation 已更新
+        // dragging
       } else {
         if (STATE.mode === 'TREE') {
           STATE.rotation.y += 0.26 * dt;
@@ -1537,41 +1782,20 @@
       mainGroup.rotation.y = STATE.rotation.y;
       mainGroup.rotation.x = STATE.rotation.x;
 
-      // 高级背景/氛围更新
       updateAurora(t);
       updateStarfield(t);
       updateFireflies(dt, t);
       updateGarlandBreath(t);
 
-      // 电影感相机更新（你要加的）
       updateCinematicCamera(dt, t);
 
-      // 粒子更新
       particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
       updateSnow();
 
       composer.render();
     }
 
-    // ===== 灯带呼吸（已在 updateGarlandBreath）=====
-
-    // ===== 雪花系统依赖 snowSystem（已在 createSnow）=====
-
-    // ===== Dust / Photos / Preload 已有 =====
-
-    // ===== handle upload =====
-
-    // ===== createDust / etc =====
-
-    // ===== createDust / snow / photo =====
-
-    // ===== 雪花 / 其他 =====
-
-    // ===== createDust already above =====
-
-    // ===== createSnow already above =====
-
-    // ===== init =====
+    // ===== start =====
     init();
   </script>
 </body>
