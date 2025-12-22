@@ -185,7 +185,7 @@
     #debug-info { display: none !important; }
     input[type="file"] { display: none; }
 
-    /* ===== 原图查看器 ===== */
+    /* ===== 原图查看器（去掉“光圈感”：无阴影/无发光）===== */
     #photo-viewer{
       position: fixed;
       inset: 0;
@@ -199,18 +199,18 @@
     .pv-backdrop{
       position:absolute;
       inset:0;
-      background: rgba(0,0,0,0.55);
+      background: rgba(0,0,0,0.72); /* 更不透：避免背后 3D 发光“透出来” */
       backdrop-filter: blur(12px);
     }
     .pv-panel{
       position: relative;
-      max-width: min(94vw, 980px);
-      width: 94vw;
-      max-height: 86vh;
+      max-width: min(96vw, 1080px);
+      width: 96vw;
+      max-height: 90vh;
       border-radius: 18px;
       overflow: hidden;
-      border: 1px solid rgba(210,233,255,0.25);
-      background: rgba(10,18,35,0.35);
+      border: 1px solid rgba(210,233,255,0.18);
+      background: rgba(10,18,35,0.55);
       box-shadow: 0 26px 70px rgba(0,0,0,0.45);
       display: flex;
       flex-direction: column;
@@ -220,8 +220,8 @@
       align-items:center;
       justify-content: space-between;
       padding: 10px 12px;
-      background: rgba(10,18,35,0.55);
-      border-bottom: 1px solid rgba(210,233,255,0.15);
+      background: rgba(10,18,35,0.75);
+      border-bottom: 1px solid rgba(210,233,255,0.12);
     }
     .pv-title{
       color: rgba(230,250,255,0.92);
@@ -241,30 +241,52 @@
       font-size: 12px;
       letter-spacing: 1px;
     }
+
     .pv-imgwrap{
       flex: 1;
       display:flex;
       align-items:center;
       justify-content:center;
       padding: 10px;
+      overflow: hidden; /* FIT 模式默认 */
     }
+    .pv-imgwrap.oneToOne{
+      align-items:flex-start;
+      justify-content:flex-start;
+      overflow: auto;    /* 1:1 模式：可滚动查看原图像素 */
+      -webkit-overflow-scrolling: touch;
+      background: rgba(0,0,0,0.18);
+    }
+
     #pv-img{
-      max-width: 100%;
-      max-height: 72vh;
       object-fit: contain;
       transform-origin: center center;
-      border-radius: 14px;
-      box-shadow: 0 14px 40px rgba(0,0,0,0.35);
-      background: rgba(0,0,0,0.25);
+      border-radius: 10px;
+      background: transparent;
+      box-shadow: none;         /* ✅ 去掉“光圈感” */
+      filter: none;             /* ✅ 不加任何滤镜 */
+      image-rendering: auto;    /* 保持自然插值 */
     }
+    /* FIT 模式：限制尺寸 */
+    .pv-fit #pv-img{
+      max-width: 100%;
+      max-height: 74vh;
+    }
+    /* 1:1 模式：不限制，按原图像素尺寸渲染（过大则滚动） */
+    .pv-one #pv-img{
+      max-width: none;
+      max-height: none;
+    }
+
     .pv-controls{
       display:flex;
+      flex-wrap: wrap;
       gap: 10px;
       align-items:center;
       justify-content: center;
       padding: 10px 12px 14px;
-      background: rgba(10,18,35,0.40);
-      border-top: 1px solid rgba(210,233,255,0.12);
+      background: rgba(10,18,35,0.55);
+      border-top: 1px solid rgba(210,233,255,0.10);
     }
     .pv-btn{
       background: rgba(180,225,255,0.12);
@@ -276,11 +298,17 @@
       letter-spacing: 1px;
       cursor: pointer;
     }
+    .pv-btn.active{
+      background: rgba(180,225,255,0.22);
+      border-color: rgba(210,233,255,0.40);
+    }
     .pv-hint{
-      color: rgba(230,250,255,0.7);
+      color: rgba(230,250,255,0.72);
       font-size: 11px;
       letter-spacing: 1px;
-      opacity: 0.85;
+      opacity: 0.9;
+      text-align: center;
+      flex-basis: 100%;
     }
 
     body.pv-open #canvas-container{ pointer-events:none; }
@@ -328,21 +356,26 @@
   </div>
   <div id="debug-info"></div>
 
-  <div id="photo-viewer" aria-hidden="true">
+  <!-- 原图查看器：默认 1:1 原图模式 -->
+  <div id="photo-viewer" aria-hidden="true" class="pv-one">
     <div class="pv-backdrop" id="pv-backdrop"></div>
     <div class="pv-panel">
       <div class="pv-topbar">
-        <div class="pv-title">ORIGINAL PHOTO</div>
+        <div class="pv-title">ORIGINAL PHOTO (1:1)</div>
         <button class="pv-close" id="pv-close">✕ Close</button>
       </div>
-      <div class="pv-imgwrap">
+      <div class="pv-imgwrap oneToOne" id="pv-imgwrap">
         <img id="pv-img" alt="photo"/>
       </div>
       <div class="pv-controls">
+        <button class="pv-btn" id="pv-mode-fit">Fit</button>
+        <button class="pv-btn active" id="pv-mode-1to1">1:1</button>
+
         <button class="pv-btn" id="pv-zoom-out">－</button>
         <button class="pv-btn" id="pv-zoom-reset">Reset</button>
         <button class="pv-btn" id="pv-zoom-in">＋</button>
-        <span class="pv-hint">在 FOCUS 再点一次同一张照片即可打开原图</span>
+
+        <div class="pv-hint">在 FOCUS 再点一次同一张照片打开原图；1:1 模式可滚动查看像素细节</div>
       </div>
     </div>
   </div>
@@ -360,8 +393,6 @@
     // ===== Selective Bloom: Layers =====
     const BLOOM_LAYER = 1;
     const BASE_LAYER  = 0;
-    const bloomLayer = new THREE.Layers();
-    bloomLayer.set(BLOOM_LAYER);
 
     // ===== DOM =====
     const debugInfo = document.getElementById('debug-info');
@@ -379,6 +410,10 @@
     const pvZoomIn = document.getElementById('pv-zoom-in');
     const pvZoomOut = document.getElementById('pv-zoom-out');
     const pvZoomReset = document.getElementById('pv-zoom-reset');
+    const pvModeFit = document.getElementById('pv-mode-fit');
+    const pvModeOne = document.getElementById('pv-mode-1to1');
+    const pvImgwrap = document.getElementById('pv-imgwrap');
+    const pvTitle = pv.querySelector('.pv-title');
 
     function setDebug(t) { if (debugInfo) debugInfo.textContent = t; }
 
@@ -442,55 +477,17 @@
 
     // ===== 5 套高级配色（Thumbs-Up 循环切换）=====
     const PALETTES = [
-      {
-        name: "Arctic Ice",
-        main:  0x8bd3ff,  // 主色（冰蓝）
-        accent:0xb9a2ff,  // 辅色（淡紫）
-        glow:  0x3aa7ff,  // 发光（霓虹蓝）
-        metal: 0xe9f4ff,  // 金属（银白）
-        fog:   0x050a18
-      },
-      {
-        name: "Aurora Violet",
-        main:  0xb9a2ff,
-        accent:0x6fd2ff,
-        glow:  0xa78bff,
-        metal: 0xf2ecff,
-        fog:   0x06061a
-      },
-      {
-        name: "Champagne Gold",
-        main:  0xffe3a0,
-        accent:0xcfefff,
-        glow:  0xffc86b,
-        metal: 0xfff5de,
-        fog:   0x07070f
-      },
-      {
-        name: "Emerald Teal",
-        main:  0x2ee6c5,
-        accent:0x6fd2ff,
-        glow:  0x18ffc8,
-        metal: 0xe8fffb,
-        fog:   0x030a10
-      },
-      {
-        name: "Rose Quartz",
-        main:  0xffa6c9,
-        accent:0xb9a2ff,
-        glow:  0xff6bb5,
-        metal: 0xffedf5,
-        fog:   0x0a0310
-      }
+      { name: "Arctic Ice",      main:0x8bd3ff, accent:0xb9a2ff, glow:0x3aa7ff, metal:0xe9f4ff, fog:0x050a18 },
+      { name: "Aurora Violet",   main:0xb9a2ff, accent:0x6fd2ff, glow:0xa78bff, metal:0xf2ecff, fog:0x06061a },
+      { name: "Champagne Gold",  main:0xffe3a0, accent:0xcfefff, glow:0xffc86b, metal:0xfff5de, fog:0x07070f },
+      { name: "Emerald Teal",    main:0x2ee6c5, accent:0x6fd2ff, glow:0x18ffc8, metal:0xe8fffb, fog:0x030a10 },
+      { name: "Rose Quartz",     main:0xffa6c9, accent:0xb9a2ff, glow:0xff6bb5, metal:0xffedf5, fog:0x0a0310 },
     ];
     let paletteIndex = 0;
 
     // ===== CONFIG =====
     const CONFIG = {
-      colors: {
-        bg: 0x030611,
-        fog: 0x050a18
-      },
+      colors: { bg: 0x030611, fog: 0x050a18 },
       particles: {
         count: 1400,
         dustCount: 1700,
@@ -515,14 +512,11 @@
     const STATE = {
       mode: 'TREE',
       focusTarget: null,
+      viewerOpen: false, // ✅ 预览打开时隐藏光圈
       hand: { detected: false, x: 0, y: 0 },
       rotation: { x: 0, y: 0 },
       touch: { active: false, startX: 0, startY: 0, lastX: 0, lastY: 0 },
-      gesture: {
-        thumbsUpHeld: false,
-        lastThumbsUpAt: 0,
-        cooldownMs: 1200
-      }
+      gesture: { thumbsUpHeld: false, lastThumbsUpAt: 0, cooldownMs: 1200 }
     };
 
     // ===== THREE =====
@@ -578,23 +572,47 @@
       fill: null
     };
 
-    // ===== FOCUS “无损高亮” Halo =====
+    // ===== FOCUS Halo（保持存在，但预览打开时强制隐藏）=====
     let focusHalo = null;
     let focusHaloMat = null;
     let haloAttachedTo = null;
 
-    // ===== viewer =====
+    // ===== viewer: 原图分辨率模式控制 =====
     let pvScale = 1;
+    let pvMode = 'ONE'; // 默认 1:1
     function setPVScale(s){
-      pvScale = Math.max(1, Math.min(4, s));
+      pvScale = Math.max(1, Math.min(6, s));
       pvImg.style.transform = `scale(${pvScale})`;
     }
+
+    function setPVMode(mode){
+      pvMode = mode;
+      const isFit = (mode === 'FIT');
+
+      pv.classList.toggle('pv-fit', isFit);
+      pv.classList.toggle('pv-one', !isFit);
+
+      pvImgwrap.classList.toggle('oneToOne', !isFit);
+
+      pvModeFit.classList.toggle('active', isFit);
+      pvModeOne.classList.toggle('active', !isFit);
+
+      pvTitle.textContent = isFit ? "ORIGINAL PHOTO (FIT)" : "ORIGINAL PHOTO (1:1)";
+      setPVScale(1);
+      pvImgwrap.scrollTop = 0;
+      pvImgwrap.scrollLeft = 0;
+    }
+
     function openPhotoViewer(src){
       if (!src) return;
+
+      STATE.viewerOpen = true; // ✅ 关键：预览打开时隐藏光圈
       document.body.classList.add('pv-open');
       pv.classList.add('show');
       pv.setAttribute('aria-hidden', 'false');
+
       pvImg.src = src;
+      setPVMode('ONE'); // ✅ 默认 1:1 原图分辨率
       setPVScale(1);
     }
     function closePhotoViewer(){
@@ -602,12 +620,16 @@
       pv.setAttribute('aria-hidden', 'true');
       pvImg.src = '';
       document.body.classList.remove('pv-open');
+      STATE.viewerOpen = false; // ✅ 关闭预览恢复
     }
+
     pvClose?.addEventListener('click', closePhotoViewer);
     pvBackdrop?.addEventListener('click', closePhotoViewer);
     pvZoomIn?.addEventListener('click', () => setPVScale(pvScale * 1.25));
     pvZoomOut?.addEventListener('click', () => setPVScale(pvScale / 1.25));
     pvZoomReset?.addEventListener('click', () => setPVScale(1));
+    pvModeFit?.addEventListener('click', () => setPVMode('FIT'));
+    pvModeOne?.addEventListener('click', () => setPVMode('ONE'));
     pvImg?.addEventListener('dblclick', () => setPVScale(pvScale === 1 ? 2 : 1));
 
     // ===== helpers =====
@@ -632,8 +654,9 @@
       tex.userData.src = src;
 
       const maxAniso = renderer?.capabilities?.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1;
-      tex.anisotropy = Math.min(8, maxAniso);
+      tex.anisotropy = Math.min(16, maxAniso); // ✅ 更强各向异性，近距离更清晰
 
+      // ✅ 非 POT 禁用 mipmaps（避免部分设备上产生“糊一层”的感觉）
       if (tex.image && isPOT(tex.image.width) && isPOT(tex.image.height)) {
         tex.generateMipmaps = true;
         tex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -646,13 +669,10 @@
       return tex;
     }
 
-    // ===== Thumbs Up 检测（关键）=====
+    // ===== Thumbs Up 检测 =====
     function isThumbsUp(lm){
       if (!lm || lm.length < 21) return false;
-
-      // y 越小越“上”
       const wrist = lm[0];
-
       const thumbTip = lm[4], thumbIP = lm[3], thumbMCP = lm[2];
       const indexTip = lm[8], indexPIP = lm[6];
       const middleTip = lm[12], middlePIP = lm[10];
@@ -670,21 +690,17 @@
         (ringTip.y   > ringPIP.y) &&
         (pinkyTip.y  > pinkyPIP.y);
 
-      // 拇指不要贴太近掌心（避免误判“握拳”）
       const thumbIndexDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
 
       return thumbUp && othersFolded && (thumbIndexDist > 0.08);
     }
 
-    // ===== 应用配色（会改材质 + 灯光 + fog）=====
+    // ===== 应用配色 =====
     function applyPalette(p){
       if (!p) return;
-
-      // fog / background 氛围（轻微变化更高级）
       CONFIG.colors.fog = p.fog;
       if (scene && scene.fog) scene.fog.color.setHex(p.fog);
 
-      // ornaments
       if (MAT.iceMat){
         MAT.iceMat.color.setHex(p.main);
         MAT.iceMat.emissive.setHex((p.glow));
@@ -708,7 +724,6 @@
         MAT.frameMat.color.setHex(p.metal);
       }
 
-      // lights
       if (LIGHTS.inner) LIGHTS.inner.color.setHex(p.glow);
       if (LIGHTS.key)   LIGHTS.key.color.setHex(p.metal);
       if (LIGHTS.rim)   LIGHTS.rim.color.setHex(p.accent);
@@ -716,18 +731,16 @@
 
       showMsg(`👍 Palette: ${p.name}`);
     }
-
     function cyclePalette(){
       paletteIndex = (paletteIndex + 1) % PALETTES.length;
       applyPalette(PALETTES[paletteIndex]);
     }
 
-    // ===== FOCUS Halo =====
+    // ===== Focus Halo（预览打开时：强制隐藏 = 去掉光圈）=====
     function createFocusHalo(){
       const c = document.createElement('canvas');
       c.width = 256; c.height = 256;
       const ctx = c.getContext('2d');
-
       const g1 = ctx.createRadialGradient(128,128,10,128,128,128);
       g1.addColorStop(0.00, 'rgba(140,210,255,0.00)');
       g1.addColorStop(0.40, 'rgba(140,210,255,0.00)');
@@ -756,8 +769,16 @@
       focusHalo.renderOrder = 999;
     }
 
-    function updateFocusHalo(dt, t){
+    function updateFocusHalo(t){
       if (!focusHalo) return;
+
+      // ✅ 关键：预览打开时直接隐藏光圈
+      if (STATE.viewerOpen) {
+        focusHalo.visible = false;
+        haloAttachedTo = null;
+        if (focusHalo.parent) focusHalo.parent.remove(focusHalo);
+        return;
+      }
 
       if (STATE.mode === 'FOCUS' && STATE.focusTarget) {
         const target = STATE.focusTarget;
@@ -776,7 +797,6 @@
 
         const pulse = 1.18 + 0.06 * Math.sin(t * 2.2) + musicEnergy * 0.10;
         focusHalo.scale.set(w * pulse, h * pulse, 1);
-
         focusHalo.material.opacity = 0.65 + 0.12 * Math.sin(t * 1.6) + musicEnergy * 0.25;
       } else {
         focusHalo.visible = false;
@@ -797,12 +817,12 @@
       smoothFov: 6.0
     };
     function expDampVec(current, target, lambda, dt) {
-      const t = 1 - Math.exp(-lambda * dt);
-      current.lerp(target, t);
+      const tt = 1 - Math.exp(-lambda * dt);
+      current.lerp(target, tt);
     }
     function expDampNum(current, target, lambda, dt){
-      const t = 1 - Math.exp(-lambda * dt);
-      return current + (target - current) * t;
+      const tt = 1 - Math.exp(-lambda * dt);
+      return current + (target - current) * tt;
     }
 
     function updateCinematicCamera(dt, t){
@@ -861,7 +881,6 @@
       setupEvents();
       setupTouchAndClick();
 
-      // 初始配色
       applyPalette(PALETTES[paletteIndex]);
 
       const loader = document.getElementById('loader');
@@ -1440,7 +1459,6 @@
       ]);
       const candyGeo = new THREE.TubeGeometry(curve, 16, 0.085, 8, false);
 
-      // 先用默认色，稍后 applyPalette 会替换
       const iceMat = new THREE.MeshPhysicalMaterial({
         color: 0x8bd3ff,
         metalness: 0.10,
@@ -1868,7 +1886,6 @@
         STATE.hand.detected = true;
         const lm = result.landmarks[0];
 
-        // ===== 👍 换色触发（带防连发）=====
         const thumbs = isThumbsUp(lm);
         const now = performance.now();
 
@@ -1882,7 +1899,6 @@
           STATE.gesture.thumbsUpHeld = false;
         }
 
-        // 你原来的模式控制逻辑保留
         STATE.hand.x = (lm[9].x - 0.5) * 2;
         STATE.hand.y = (lm[9].y - 0.5) * 2;
 
@@ -1908,7 +1924,6 @@
             if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random() * photos.length)].mesh;
           }
         } else if (extensionRatio > 1.7) { STATE.mode = 'SCATTER'; STATE.focusTarget = null; }
-
       } else {
         STATE.hand.detected = false;
         STATE.gesture.thumbsUpHeld = false;
@@ -2046,7 +2061,7 @@
 
       particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
       updateSnow();
-      updateFocusHalo(dt, t);
+      updateFocusHalo(t); // ✅ 预览打开时自动隐藏光圈
 
       // Selective Bloom render
       camera.layers.set(BLOOM_LAYER);
