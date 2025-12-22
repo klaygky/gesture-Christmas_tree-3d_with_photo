@@ -185,7 +185,7 @@
     #debug-info { display: none !important; }
     input[type="file"] { display: none; }
 
-    /* ===== 原图查看器（去掉“光圈感”：无阴影/无发光）===== */
+    /* ===== 原图查看器：遮罩加深，避免 Bloom 透出造成“光圈错觉”===== */
     #photo-viewer{
       position: fixed;
       inset: 0;
@@ -199,7 +199,7 @@
     .pv-backdrop{
       position:absolute;
       inset:0;
-      background: rgba(0,0,0,0.72); /* 更不透：避免背后 3D 发光“透出来” */
+      background: rgba(0,0,0,0.90); /* ✅ 更黑：基本不会透出任何光晕 */
       backdrop-filter: blur(12px);
     }
     .pv-panel{
@@ -248,12 +248,12 @@
       align-items:center;
       justify-content:center;
       padding: 10px;
-      overflow: hidden; /* FIT 模式默认 */
+      overflow: hidden; /* FIT 默认 */
     }
     .pv-imgwrap.oneToOne{
       align-items:flex-start;
       justify-content:flex-start;
-      overflow: auto;    /* 1:1 模式：可滚动查看原图像素 */
+      overflow: auto;    /* 1:1 模式：可滚动看细节 */
       -webkit-overflow-scrolling: touch;
       background: rgba(0,0,0,0.18);
     }
@@ -263,16 +263,14 @@
       transform-origin: center center;
       border-radius: 10px;
       background: transparent;
-      box-shadow: none;         /* ✅ 去掉“光圈感” */
-      filter: none;             /* ✅ 不加任何滤镜 */
-      image-rendering: auto;    /* 保持自然插值 */
+      box-shadow: none;      /* ✅ 不要任何“光圈感” */
+      filter: none;
+      image-rendering: auto;
     }
-    /* FIT 模式：限制尺寸 */
     .pv-fit #pv-img{
       max-width: 100%;
       max-height: 74vh;
     }
-    /* 1:1 模式：不限制，按原图像素尺寸渲染（过大则滚动） */
     .pv-one #pv-img{
       max-width: none;
       max-height: none;
@@ -356,7 +354,7 @@
   </div>
   <div id="debug-info"></div>
 
-  <!-- 原图查看器：默认 1:1 原图模式 -->
+  <!-- 原图查看器：默认 1:1 -->
   <div id="photo-viewer" aria-hidden="true" class="pv-one">
     <div class="pv-backdrop" id="pv-backdrop"></div>
     <div class="pv-panel">
@@ -375,7 +373,7 @@
         <button class="pv-btn" id="pv-zoom-reset">Reset</button>
         <button class="pv-btn" id="pv-zoom-in">＋</button>
 
-        <div class="pv-hint">在 FOCUS 再点一次同一张照片打开原图；1:1 模式可滚动查看像素细节</div>
+        <div class="pv-hint">FOCUS 后再点一次同一张照片打开原图；1:1 模式可滚动查看像素细节</div>
       </div>
     </div>
   </div>
@@ -390,12 +388,9 @@
     import { Lensflare, LensflareElement } from 'three/addons/objects/Lensflare.js';
     import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 
-    // ===== Selective Bloom: Layers =====
     const BLOOM_LAYER = 1;
     const BASE_LAYER  = 0;
 
-    // ===== DOM =====
-    const debugInfo = document.getElementById('debug-info');
     const camBtn = document.getElementById('cam-btn');
     const bgm = document.getElementById('bgm');
     const musicBtn = document.getElementById('music-btn');
@@ -415,9 +410,7 @@
     const pvImgwrap = document.getElementById('pv-imgwrap');
     const pvTitle = pv.querySelector('.pv-title');
 
-    function setDebug(t) { if (debugInfo) debugInfo.textContent = t; }
-
-    // ===== Music + analyser =====
+    // ===== Music analyser =====
     let musicOn = false;
     let audioCtx = null, analyser = null, freqData = null;
     let musicEnergy = 0;
@@ -475,7 +468,60 @@
       musicEnergy += (target - musicEnergy) * 0.08;
     }
 
-    // ===== 5 套高级配色（Thumbs-Up 循环切换）=====
+    // ===== UI msg =====
+    function showMsg(txt) {
+      const box = document.getElementById('msg-box');
+      if (!box) return;
+      box.innerText = txt;
+      box.style.display = 'block';
+      setTimeout(() => { box.style.display = 'none'; }, 2200);
+    }
+
+    // ===== viewer scale =====
+    let pvScale = 1;
+    let pvMode = 'ONE';
+    function setPVScale(s){
+      pvScale = Math.max(1, Math.min(6, s));
+      pvImg.style.transform = `scale(${pvScale})`;
+    }
+    function setPVMode(mode){
+      pvMode = mode;
+      const isFit = (mode === 'FIT');
+      pv.classList.toggle('pv-fit', isFit);
+      pv.classList.toggle('pv-one', !isFit);
+      pvImgwrap.classList.toggle('oneToOne', !isFit);
+      pvModeFit.classList.toggle('active', isFit);
+      pvModeOne.classList.toggle('active', !isFit);
+      pvTitle.textContent = isFit ? "ORIGINAL PHOTO (FIT)" : "ORIGINAL PHOTO (1:1)";
+      setPVScale(1);
+      pvImgwrap.scrollTop = 0;
+      pvImgwrap.scrollLeft = 0;
+    }
+    function openPhotoViewer(src){
+      document.body.classList.add('pv-open');
+      pv.classList.add('show');
+      pv.setAttribute('aria-hidden', 'false');
+      pvImg.src = src;
+      setPVMode('ONE');
+      setPVScale(1);
+    }
+    function closePhotoViewer(){
+      pv.classList.remove('show');
+      pv.setAttribute('aria-hidden', 'true');
+      pvImg.src = '';
+      document.body.classList.remove('pv-open');
+    }
+
+    pvClose?.addEventListener('click', closePhotoViewer);
+    pvBackdrop?.addEventListener('click', closePhotoViewer);
+    pvZoomIn?.addEventListener('click', () => setPVScale(pvScale * 1.25));
+    pvZoomOut?.addEventListener('click', () => setPVScale(pvScale / 1.25));
+    pvZoomReset?.addEventListener('click', () => setPVScale(1));
+    pvModeFit?.addEventListener('click', () => setPVMode('FIT'));
+    pvModeOne?.addEventListener('click', () => setPVMode('ONE'));
+    pvImg?.addEventListener('dblclick', () => setPVScale(pvScale === 1 ? 2 : 1));
+
+    // ===== palettes (thumbs-up) =====
     const PALETTES = [
       { name: "Arctic Ice",      main:0x8bd3ff, accent:0xb9a2ff, glow:0x3aa7ff, metal:0xe9f4ff, fog:0x050a18 },
       { name: "Aurora Violet",   main:0xb9a2ff, accent:0x6fd2ff, glow:0xa78bff, metal:0xf2ecff, fog:0x06061a },
@@ -512,7 +558,6 @@
     const STATE = {
       mode: 'TREE',
       focusTarget: null,
-      viewerOpen: false, // ✅ 预览打开时隐藏光圈
       hand: { detected: false, x: 0, y: 0 },
       rotation: { x: 0, y: 0 },
       touch: { active: false, startX: 0, startY: 0, lastX: 0, lastY: 0 },
@@ -556,90 +601,11 @@
     // lens flare
     let flareLight = null;
 
-    // ===== Materials & Lights (为换色保留引用) =====
-    const MAT = {
-      iceMat: null,
-      silverMat: null,
-      auroraMat2: null,
-      frameMat: null,
-      garlandMat: null
-    };
-    const LIGHTS = {
-      ambient: null,
-      inner: null,
-      key: null,
-      rim: null,
-      fill: null
-    };
-
-    // ===== FOCUS Halo（保持存在，但预览打开时强制隐藏）=====
-    let focusHalo = null;
-    let focusHaloMat = null;
-    let haloAttachedTo = null;
-
-    // ===== viewer: 原图分辨率模式控制 =====
-    let pvScale = 1;
-    let pvMode = 'ONE'; // 默认 1:1
-    function setPVScale(s){
-      pvScale = Math.max(1, Math.min(6, s));
-      pvImg.style.transform = `scale(${pvScale})`;
-    }
-
-    function setPVMode(mode){
-      pvMode = mode;
-      const isFit = (mode === 'FIT');
-
-      pv.classList.toggle('pv-fit', isFit);
-      pv.classList.toggle('pv-one', !isFit);
-
-      pvImgwrap.classList.toggle('oneToOne', !isFit);
-
-      pvModeFit.classList.toggle('active', isFit);
-      pvModeOne.classList.toggle('active', !isFit);
-
-      pvTitle.textContent = isFit ? "ORIGINAL PHOTO (FIT)" : "ORIGINAL PHOTO (1:1)";
-      setPVScale(1);
-      pvImgwrap.scrollTop = 0;
-      pvImgwrap.scrollLeft = 0;
-    }
-
-    function openPhotoViewer(src){
-      if (!src) return;
-
-      STATE.viewerOpen = true; // ✅ 关键：预览打开时隐藏光圈
-      document.body.classList.add('pv-open');
-      pv.classList.add('show');
-      pv.setAttribute('aria-hidden', 'false');
-
-      pvImg.src = src;
-      setPVMode('ONE'); // ✅ 默认 1:1 原图分辨率
-      setPVScale(1);
-    }
-    function closePhotoViewer(){
-      pv.classList.remove('show');
-      pv.setAttribute('aria-hidden', 'true');
-      pvImg.src = '';
-      document.body.classList.remove('pv-open');
-      STATE.viewerOpen = false; // ✅ 关闭预览恢复
-    }
-
-    pvClose?.addEventListener('click', closePhotoViewer);
-    pvBackdrop?.addEventListener('click', closePhotoViewer);
-    pvZoomIn?.addEventListener('click', () => setPVScale(pvScale * 1.25));
-    pvZoomOut?.addEventListener('click', () => setPVScale(pvScale / 1.25));
-    pvZoomReset?.addEventListener('click', () => setPVScale(1));
-    pvModeFit?.addEventListener('click', () => setPVMode('FIT'));
-    pvModeOne?.addEventListener('click', () => setPVMode('ONE'));
-    pvImg?.addEventListener('dblclick', () => setPVScale(pvScale === 1 ? 2 : 1));
+    // ===== Materials & Lights =====
+    const MAT = { iceMat:null, silverMat:null, auroraMat2:null, frameMat:null, garlandMat:null };
+    const LIGHTS = { ambient:null, inner:null, key:null, rim:null, fill:null };
 
     // ===== helpers =====
-    function showMsg(txt) {
-      const box = document.getElementById('msg-box');
-      if (!box) return;
-      box.innerText = txt;
-      box.style.display = 'block';
-      setTimeout(() => { box.style.display = 'none'; }, 2200);
-    }
     function computeDPR(){
       let dpr = Math.min(window.devicePixelRatio || 1, CONFIG.render.maxDPR);
       const mp = (window.innerWidth * window.innerHeight * dpr * dpr) / 1e6;
@@ -654,9 +620,8 @@
       tex.userData.src = src;
 
       const maxAniso = renderer?.capabilities?.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1;
-      tex.anisotropy = Math.min(16, maxAniso); // ✅ 更强各向异性，近距离更清晰
+      tex.anisotropy = Math.min(16, maxAniso);
 
-      // ✅ 非 POT 禁用 mipmaps（避免部分设备上产生“糊一层”的感觉）
       if (tex.image && isPOT(tex.image.width) && isPOT(tex.image.height)) {
         tex.generateMipmaps = true;
         tex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -669,33 +634,6 @@
       return tex;
     }
 
-    // ===== Thumbs Up 检测 =====
-    function isThumbsUp(lm){
-      if (!lm || lm.length < 21) return false;
-      const wrist = lm[0];
-      const thumbTip = lm[4], thumbIP = lm[3], thumbMCP = lm[2];
-      const indexTip = lm[8], indexPIP = lm[6];
-      const middleTip = lm[12], middlePIP = lm[10];
-      const ringTip = lm[16], ringPIP = lm[14];
-      const pinkyTip = lm[20], pinkyPIP = lm[18];
-
-      const thumbUp =
-        (thumbTip.y < thumbIP.y) &&
-        (thumbIP.y < thumbMCP.y) &&
-        (thumbTip.y < wrist.y - 0.02);
-
-      const othersFolded =
-        (indexTip.y  > indexPIP.y) &&
-        (middleTip.y > middlePIP.y) &&
-        (ringTip.y   > ringPIP.y) &&
-        (pinkyTip.y  > pinkyPIP.y);
-
-      const thumbIndexDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
-
-      return thumbUp && othersFolded && (thumbIndexDist > 0.08);
-    }
-
-    // ===== 应用配色 =====
     function applyPalette(p){
       if (!p) return;
       CONFIG.colors.fog = p.fog;
@@ -703,7 +641,7 @@
 
       if (MAT.iceMat){
         MAT.iceMat.color.setHex(p.main);
-        MAT.iceMat.emissive.setHex((p.glow));
+        MAT.iceMat.emissive.setHex(p.glow);
         MAT.iceMat.emissiveIntensity = 0.10;
       }
       if (MAT.silverMat){
@@ -736,73 +674,29 @@
       applyPalette(PALETTES[paletteIndex]);
     }
 
-    // ===== Focus Halo（预览打开时：强制隐藏 = 去掉光圈）=====
-    function createFocusHalo(){
-      const c = document.createElement('canvas');
-      c.width = 256; c.height = 256;
-      const ctx = c.getContext('2d');
-      const g1 = ctx.createRadialGradient(128,128,10,128,128,128);
-      g1.addColorStop(0.00, 'rgba(140,210,255,0.00)');
-      g1.addColorStop(0.40, 'rgba(140,210,255,0.00)');
-      g1.addColorStop(0.62, 'rgba(140,210,255,0.22)');
-      g1.addColorStop(0.78, 'rgba(200,245,255,0.65)');
-      g1.addColorStop(1.00, 'rgba(255,255,255,0.00)');
-      ctx.fillStyle = g1;
-      ctx.fillRect(0,0,256,256);
+    // ===== Thumbs Up detect =====
+    function isThumbsUp(lm){
+      if (!lm || lm.length < 21) return false;
+      const wrist = lm[0];
+      const thumbTip = lm[4], thumbIP = lm[3], thumbMCP = lm[2];
+      const indexTip = lm[8], indexPIP = lm[6];
+      const middleTip = lm[12], middlePIP = lm[10];
+      const ringTip = lm[16], ringPIP = lm[14];
+      const pinkyTip = lm[20], pinkyPIP = lm[18];
 
-      const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace;
+      const thumbUp =
+        (thumbTip.y < thumbIP.y) &&
+        (thumbIP.y < thumbMCP.y) &&
+        (thumbTip.y < wrist.y - 0.02);
 
-      const geo = new THREE.PlaneGeometry(1, 1);
-      focusHaloMat = new THREE.MeshBasicMaterial({
-        map: tex,
-        transparent: true,
-        opacity: 1.0,
-        depthWrite: false,
-        depthTest: false,
-        blending: THREE.AdditiveBlending
-      });
+      const othersFolded =
+        (indexTip.y  > indexPIP.y) &&
+        (middleTip.y > middlePIP.y) &&
+        (ringTip.y   > ringPIP.y) &&
+        (pinkyTip.y  > pinkyPIP.y);
 
-      focusHalo = new THREE.Mesh(geo, focusHaloMat);
-      focusHalo.layers.set(BLOOM_LAYER);
-      focusHalo.visible = false;
-      focusHalo.renderOrder = 999;
-    }
-
-    function updateFocusHalo(t){
-      if (!focusHalo) return;
-
-      // ✅ 关键：预览打开时直接隐藏光圈
-      if (STATE.viewerOpen) {
-        focusHalo.visible = false;
-        haloAttachedTo = null;
-        if (focusHalo.parent) focusHalo.parent.remove(focusHalo);
-        return;
-      }
-
-      if (STATE.mode === 'FOCUS' && STATE.focusTarget) {
-        const target = STATE.focusTarget;
-
-        if (haloAttachedTo !== target) {
-          if (focusHalo.parent) focusHalo.parent.remove(focusHalo);
-          target.add(focusHalo);
-          haloAttachedTo = target;
-        }
-
-        const w = target.userData?.photoW ?? 1.2;
-        const h = target.userData?.photoH ?? 1.2;
-
-        focusHalo.visible = true;
-        focusHalo.position.set(0, 0, 0.09);
-
-        const pulse = 1.18 + 0.06 * Math.sin(t * 2.2) + musicEnergy * 0.10;
-        focusHalo.scale.set(w * pulse, h * pulse, 1);
-        focusHalo.material.opacity = 0.65 + 0.12 * Math.sin(t * 1.6) + musicEnergy * 0.25;
-      } else {
-        focusHalo.visible = false;
-        haloAttachedTo = null;
-        if (focusHalo.parent) focusHalo.parent.remove(focusHalo);
-      }
+      const thumbIndexDist = Math.hypot(thumbTip.x - indexTip.x, thumbTip.y - indexTip.y);
+      return thumbUp && othersFolded && (thumbIndexDist > 0.08);
     }
 
     // ===== cinematic camera =====
@@ -824,7 +718,6 @@
       const tt = 1 - Math.exp(-lambda * dt);
       return current + (target - current) * tt;
     }
-
     function updateCinematicCamera(dt, t){
       if (STATE.mode === 'FOCUS' && STATE.focusTarget) {
         STATE.focusTarget.getWorldPosition(CAM.lookTarget);
@@ -874,9 +767,7 @@
       createDust();
       createSnow();
 
-      createFocusHalo();
       loadPredefinedImages();
-
       setupPostProcessing();
       setupEvents();
       setupTouchAndClick();
@@ -1036,7 +927,6 @@
     // ===== 极光 =====
     function createAuroraDome() {
       const geo = new THREE.SphereGeometry(420, 48, 32);
-
       auroraMat = new THREE.ShaderMaterial({
         side: THREE.BackSide,
         transparent: true,
@@ -1625,7 +1515,6 @@
       garland.layers.enable(BLOOM_LAYER);
       mainGroup.add(garland);
     }
-
     function updateGarlandBreath(t){
       if (!garlandMat) return;
       const breath = 0.16 + 0.08 * (0.5 + 0.5 * Math.sin(t*1.2));
@@ -1684,7 +1573,6 @@
       fireflySystem.layers.enable(BLOOM_LAYER);
       mainGroup.add(fireflySystem);
     }
-
     function updateFireflies(dt, t){
       if (!fireflySystem || !fireflyPosAttr || !fireflyVel) return;
 
@@ -1829,7 +1717,6 @@
       if (isCameraRunning) return;
 
       camBtn.textContent = "🎉Surprise…";
-      setDebug("Loading AI models...");
       video = document.getElementById('webcam');
 
       try {
@@ -1852,7 +1739,6 @@
         video.srcObject = stream;
         video.addEventListener("loadeddata", predictWebcam);
 
-        setDebug("Gesture Active");
         camBtn.textContent = "🎉Surprise";
         camBtn.classList.add('active');
         isCameraRunning = true;
@@ -1863,7 +1749,6 @@
         let msg = "Camera Error: " + e.name;
         if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') msg = "请允许摄像头权限～";
         else if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') msg = "需要 HTTPS 才能用摄像头";
-        setDebug(msg);
         showMsg(msg);
         camBtn.textContent = "🎉Surprise";
       }
@@ -1888,7 +1773,6 @@
 
         const thumbs = isThumbsUp(lm);
         const now = performance.now();
-
         if (thumbs) {
           if (!STATE.gesture.thumbsUpHeld && (now - STATE.gesture.lastThumbsUpAt > STATE.gesture.cooldownMs)) {
             STATE.gesture.lastThumbsUpAt = now;
@@ -1930,7 +1814,6 @@
       }
     }
 
-    // ===== EVENTS =====
     function setupEvents() {
       window.addEventListener('resize', () => {
         const dpr = computeDPR();
@@ -2024,7 +1907,6 @@
       }, { passive: true });
     }
 
-    // ===== animation loop =====
     function animate() {
       requestAnimationFrame(animate);
       const dt = clock.getDelta();
@@ -2061,7 +1943,6 @@
 
       particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
       updateSnow();
-      updateFocusHalo(t); // ✅ 预览打开时自动隐藏光圈
 
       // Selective Bloom render
       camera.layers.set(BLOOM_LAYER);
@@ -2070,6 +1951,9 @@
       camera.layers.set(BASE_LAYER);
       finalComposer.render();
     }
+
+    // ===== create floor + aurora + starfield + etc (functions used above) =====
+    // （上面已定义）
 
     // ===== start =====
     init();
