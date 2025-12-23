@@ -521,7 +521,7 @@
     pvModeOne?.addEventListener('click', () => setPVMode('ONE'));
     pvImg?.addEventListener('dblclick', () => setPVScale(pvScale === 1 ? 2 : 1));
 
-    // ===== palettes (index-spin) =====
+    // ===== palettes (index-circle) =====
     const PALETTES = [
       { name: "Arctic Ice",      main:0x8bd3ff, accent:0xb9a2ff, glow:0x3aa7ff, metal:0xe9f4ff, fog:0x050a18 },
       { name: "Aurora Violet",   main:0xb9a2ff, accent:0x6fd2ff, glow:0xa78bff, metal:0xf2ecff, fog:0x06061a },
@@ -543,15 +543,16 @@
         starCount: 1400,
         starMinR: 90,
         starMaxR: 260,
-        fireflyCount: 260
+        fireflyCount: 260,
+
+        // Meteors
+        meteorPool: 18,
+        meteorSpawnPerSec: 0.55,  // 越大越频繁
+        meteorRadiusMin: 160,
+        meteorRadiusMax: 255
       },
       camera: { baseZ: 50 },
       render: { maxDPR: 3 },
-      meteors: {
-        max: 14,
-        spawnMin: 1.6,
-        spawnMax: 3.8
-      },
       preload: {
         autoScanLocal: true,
         useCloudImages: false,
@@ -567,16 +568,15 @@
       rotation: { x: 0, y: 0 },
       touch: { active: false, startX: 0, startY: 0, lastX: 0, lastY: 0 },
       gesture: {
-        spin: {
-          active: false,
-          track: [],        // {x,y,t} in hand-local coordinates
-          lastAngle: null,
-          accAngle: 0,
-          lastCycleAt: 0,
-          cooldownMs: 900,
-          windowMs: 1200,
-          spinVel: 0
-        }
+        // index-circle
+        circleTrack: [],           // {x,y,t}
+        circleActive: false,
+        lastCircleAt: 0,
+        cooldownMs: 950,
+
+        // spin boost while circling
+        spinBoost: 0,              // extra rot speed (rad/s)
+        spinBoostMax: 6.0
       }
     };
 
@@ -617,11 +617,11 @@
     // lens flare
     let flareLight = null;
 
-    // meteors (shooting stars)
+    // Meteors
     let meteorGroup = null;
-    let meteorPool = [];
     let meteorTex = null;
-    let meteorSpawnT = 0;
+    let meteors = []; // {mesh, active, vel, life, maxLife, baseLen, baseWid}
+    let meteorSpawnAcc = 0;
 
     // ===== Materials & Lights =====
     const MAT = { iceMat:null, silverMat:null, auroraMat2:null, frameMat:null, garlandMat:null };
@@ -635,12 +635,6 @@
       return dpr;
     }
     function isPOT(n){ return (n & (n - 1)) === 0; }
-    function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
-    function wrapPi(a){
-      while (a > Math.PI) a -= Math.PI * 2;
-      while (a < -Math.PI) a += Math.PI * 2;
-      return a;
-    }
 
     function tunePhotoTexture(tex, src){
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -695,15 +689,15 @@
       if (LIGHTS.rim)   LIGHTS.rim.color.setHex(p.accent);
       if (LIGHTS.fill)  LIGHTS.fill.color.setHex(p.metal);
 
-      showMsg(`🌀 Index Spin → Palette: ${p.name}`);
+      showMsg(`🌀 Palette: ${p.name}`);
     }
     function cyclePalette(){
       paletteIndex = (paletteIndex + 1) % PALETTES.length;
       applyPalette(PALETTES[paletteIndex]);
     }
 
-    // ===== Index spinning gesture (color + rotate) =====
-    function isIndexSpinPose(lm){
+    // ===== Index-circle gesture (single index finger up + circle) =====
+    function isIndexOnlyUp(lm){
       if (!lm || lm.length < 21) return false;
 
       const wrist = lm[0];
@@ -713,8 +707,8 @@
       const ringTip = lm[16], ringPIP = lm[14];
       const pinkyTip = lm[20], pinkyPIP = lm[18];
 
-      // index extended (y smaller = higher on screen)
-      const indexExtended =
+      // index up (y smaller = higher)
+      const indexUp =
         (indexTip.y < indexPIP.y) &&
         (indexPIP.y < indexMCP.y) &&
         (indexTip.y < wrist.y - 0.02);
@@ -725,91 +719,133 @@
         (ringTip.y   > ringPIP.y) &&
         (pinkyTip.y  > pinkyPIP.y);
 
-      // small sanity: index is not too close to palm (avoid false positives)
-      const palm = lm[9];
-      const d = Math.hypot(indexTip.x - palm.x, indexTip.y - palm.y);
-      return indexExtended && othersFolded && (d > 0.08);
+      // keep "single index" generally in upper area (more like "往上")
+      const inUpper = indexTip.y < 0.65;
+
+      return indexUp && othersFolded && inUpper;
     }
 
-    function resetSpin(){
-      const s = STATE.gesture.spin;
-      s.active = false;
-      s.track.length = 0;
-      s.lastAngle = null;
-      s.accAngle = 0;
-      s.spinVel = 0;
+    function pushCirclePoint(x, y, t){
+      const buf = STATE.gesture.circleTrack;
+      buf.push({ x, y, t });
+      // keep last 900ms
+      const maxMs = 900;
+      while (buf.length && (t - buf[0].t) > maxMs) buf.shift();
     }
 
-    function updateIndexSpin(lm, now){
-      const s = STATE.gesture.spin;
-      const tip = lm[8];
-      const palm = lm[9];
+    function unwrapDelta(a, b){
+      // return delta from a -> b in [-pi, pi]
+      let d = b - a;
+      while (d > Math.PI) d -= Math.PI * 2;
+      while (d < -Math.PI) d += Math.PI * 2;
+      return d;
+    }
 
-      // hand-local coordinates (translation invariant)
-      const x = (tip.x - palm.x);
-      const y = (tip.y - palm.y);
+    function analyzeCircle(){
+      const buf = STATE.gesture.circleTrack;
+      if (!buf || buf.length < 12) return { ok:false };
 
-      s.track.push({ x, y, t: now });
-      while (s.track.length && (now - s.track[0].t > s.windowMs)) s.track.shift();
-      if (s.track.length > 28) s.track.shift();
+      // centroid
+      let cx = 0, cy = 0;
+      for (const p of buf){ cx += p.x; cy += p.y; }
+      cx /= buf.length; cy /= buf.length;
 
-      // need enough points
-      if (s.track.length < 10) {
-        s.active = true;
-        s.spinVel *= 0.85;
+      // radius stats
+      let rSum = 0;
+      const rs = new Array(buf.length);
+      for (let i = 0; i < buf.length; i++){
+        const dx = buf[i].x - cx, dy = buf[i].y - cy;
+        const r = Math.hypot(dx, dy);
+        rs[i] = r;
+        rSum += r;
+      }
+      const rAvg = rSum / buf.length;
+      let rVar = 0;
+      for (let i = 0; i < rs.length; i++){
+        const d = rs[i] - rAvg;
+        rVar += d*d;
+      }
+      const rStd = Math.sqrt(rVar / rs.length);
+
+      // thresholds (normalized in webcam coords)
+      const minR = 0.030;
+      const maxR = 0.18;
+      const maxStd = 0.040;
+
+      if (rAvg < minR || rAvg > maxR || rStd > maxStd) return { ok:false, cx, cy, rAvg, rStd };
+
+      // angles + unwrapped rotation
+      let totalRot = 0;
+      let lastAng = Math.atan2(buf[0].y - cy, buf[0].x - cx);
+      let unwrapped = lastAng;
+      const angs = [unwrapped];
+
+      for (let i = 1; i < buf.length; i++){
+        const ang = Math.atan2(buf[i].y - cy, buf[i].x - cx);
+        const d = unwrapDelta(lastAng, ang);
+        unwrapped += d;
+        totalRot += d;
+        lastAng = ang;
+        angs.push(unwrapped);
+      }
+
+      // angular velocity (last ~3 points)
+      let angVel = 0;
+      if (buf.length >= 4){
+        const i2 = buf.length - 1;
+        const i0 = buf.length - 4;
+        const dt = Math.max(1, (buf[i2].t - buf[i0].t)) / 1000;
+        const dA = angs[i2] - angs[i0];
+        angVel = dA / dt; // rad/s
+      }
+
+      const spanMs = buf[buf.length - 1].t - buf[0].t;
+
+      return {
+        ok:true,
+        cx, cy,
+        rAvg, rStd,
+        totalRot,
+        absRot: Math.abs(totalRot),
+        spanMs,
+        angVel
+      };
+    }
+
+    function updateCircleGesture(lm, nowMs){
+      const indexTip = lm[8];
+
+      pushCirclePoint(indexTip.x, indexTip.y, nowMs);
+
+      const a = analyzeCircle();
+      if (!a.ok){
+        STATE.gesture.circleActive = false;
+        // slight decay
+        STATE.gesture.spinBoost *= 0.92;
         return;
       }
 
-      // center = mean of recent points
-      let cx = 0, cy = 0;
-      for (const p of s.track) { cx += p.x; cy += p.y; }
-      cx /= s.track.length;
-      cy /= s.track.length;
+      // active while circling (even before trigger)
+      STATE.gesture.circleActive = true;
 
-      // circle-likeness by radius consistency
-      let rSum = 0, r2Sum = 0;
-      for (const p of s.track) {
-        const r = Math.hypot(p.x - cx, p.y - cy);
-        rSum += r;
-        r2Sum += r*r;
-      }
-      const rMean = rSum / s.track.length;
-      const rVar = Math.max(0, r2Sum / s.track.length - rMean * rMean);
-      const rStd = Math.sqrt(rVar);
-      const circleOK = (rMean > 0.03) && (rStd / rMean < 0.45);
+      // map angular velocity to tree spin
+      const vel = Math.min(STATE.gesture.spinBoostMax, Math.abs(a.angVel) * 0.35);
+      STATE.gesture.spinBoost = Math.max(STATE.gesture.spinBoost, vel);
 
-      // current angle around center
-      const ang = Math.atan2(y - cy, x - cx);
+      // trigger when almost a full circle within ~0.9s
+      const triggerRot = Math.PI * 2 * 0.85; // 306°+
+      const within = a.spanMs <= 950;
 
-      if (circleOK && s.lastAngle != null) {
-        const prev = s.track[s.track.length - 2];
-        const dt = Math.max(0.016, (now - prev.t) / 1000);
-
-        let dA = wrapPi(ang - s.lastAngle);
-
-        // filter huge jumps (bad detections)
-        if (Math.abs(dA) < 0.9) {
-          s.accAngle += dA;
-          s.spinVel = dA / dt;
-        } else {
-          s.spinVel *= 0.65;
-        }
-
-        // one full rotation triggers palette
-        const TH = Math.PI * 2 * 0.85;
-        if (Math.abs(s.accAngle) > TH && (now - s.lastCycleAt > s.cooldownMs)) {
-          s.lastCycleAt = now;
-          s.accAngle = 0;
+      if (within && a.absRot >= triggerRot){
+        if (nowMs - STATE.gesture.lastCircleAt > STATE.gesture.cooldownMs){
+          STATE.gesture.lastCircleAt = nowMs;
           cyclePalette();
+          // burst spin so “换色同时树也转得明显”
+          STATE.gesture.spinBoost = Math.min(STATE.gesture.spinBoostMax, Math.max(STATE.gesture.spinBoost, 3.5));
+          // reset track to prevent multi-trigger from same circle
+          STATE.gesture.circleTrack.length = 0;
         }
-      } else {
-        // not circle enough: decay
-        s.spinVel *= 0.82;
-        s.accAngle *= 0.92;
       }
-
-      s.lastAngle = ang;
-      s.active = true;
     }
 
     // ===== cinematic camera =====
@@ -871,7 +907,7 @@
 
       createAuroraDome();
       createStarfield();
-      createMeteors();   // ✅ 新增：真实流星背景
+      createMeteors(); // ✅ 流星背景
 
       createTextures();
       createFloor();
@@ -1226,43 +1262,48 @@
       starSystem.material.opacity = 0.86 + musicEnergy * 0.08;
     }
 
-    // ===== 真实流星（shooting stars）背景 =====
+    // ===== 流星（明显 + 高级：带尾迹贴图 + Bloom）=====
     function createMeteorTexture(){
       const c = document.createElement('canvas');
       c.width = 512;
-      c.height = 64;
+      c.height = 96;
       const ctx = c.getContext('2d');
 
-      // tail glow
-      const grad = ctx.createLinearGradient(0, 0, c.width, 0);
-      grad.addColorStop(0.0, 'rgba(255,255,255,0.0)');
-      grad.addColorStop(0.25, 'rgba(200,235,255,0.06)');
-      grad.addColorStop(0.55, 'rgba(200,235,255,0.16)');
-      grad.addColorStop(0.80, 'rgba(255,255,255,0.55)');
-      grad.addColorStop(1.0, 'rgba(255,255,255,1.0)');
-
-      // soft body (use vertical falloff)
       ctx.clearRect(0,0,c.width,c.height);
-      ctx.fillStyle = 'rgba(0,0,0,0)';
-      ctx.fillRect(0,0,c.width,c.height);
 
-      for (let y = 0; y < c.height; y++){
-        const v = Math.abs((y / c.height) - 0.5) * 2;
-        const a = Math.max(0, 1 - Math.pow(v, 1.6));
-        ctx.globalAlpha = a;
-        ctx.fillStyle = grad;
-        ctx.fillRect(0, y, c.width, 1);
-      }
-      ctx.globalAlpha = 1;
+      // tail gradient (left = tail, right = head)
+      const grad = ctx.createLinearGradient(0, 0, c.width, 0);
+      grad.addColorStop(0.00, 'rgba(255,255,255,0)');
+      grad.addColorStop(0.15, 'rgba(150,220,255,0.06)');
+      grad.addColorStop(0.40, 'rgba(180,235,255,0.22)');
+      grad.addColorStop(0.70, 'rgba(220,250,255,0.55)');
+      grad.addColorStop(0.92, 'rgba(255,255,255,0.95)');
+      grad.addColorStop(1.00, 'rgba(255,255,255,1)');
 
-      // hot head
-      const rg = ctx.createRadialGradient(c.width*0.96, c.height*0.5, 0, c.width*0.96, c.height*0.5, c.height*0.55);
-      rg.addColorStop(0.0, 'rgba(255,255,255,1)');
-      rg.addColorStop(0.3, 'rgba(210,245,255,0.75)');
-      rg.addColorStop(1.0, 'rgba(255,255,255,0)');
+      // draw tapered tail
+      ctx.save();
+      ctx.translate(0, c.height/2);
+      ctx.fillStyle = grad;
+
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(c.width*0.35, -c.height*0.18, c.width*0.75, -c.height*0.06);
+      ctx.lineTo(c.width, 0);
+      ctx.quadraticCurveTo(c.width*0.75,  c.height*0.06, c.width*0.35,  c.height*0.18);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      // head glow
+      const hx = c.width * 0.95;
+      const hy = c.height / 2;
+      const rg = ctx.createRadialGradient(hx, hy, 0, hx, hy, c.height*0.55);
+      rg.addColorStop(0.00, 'rgba(255,255,255,1)');
+      rg.addColorStop(0.25, 'rgba(220,250,255,0.9)');
+      rg.addColorStop(1.00, 'rgba(255,255,255,0)');
       ctx.fillStyle = rg;
       ctx.beginPath();
-      ctx.arc(c.width*0.96, c.height*0.5, c.height*0.55, 0, Math.PI*2);
+      ctx.arc(hx, hy, c.height*0.55, 0, Math.PI*2);
       ctx.fill();
 
       const tex = new THREE.CanvasTexture(c);
@@ -1271,142 +1312,134 @@
       tex.wrapT = THREE.ClampToEdgeWrapping;
       tex.minFilter = THREE.LinearFilter;
       tex.magFilter = THREE.LinearFilter;
-      tex.needsUpdate = true;
       return tex;
     }
 
-    function createMeteors(){
-      meteorGroup = new THREE.Group();
-      meteorGroup.layers.enable(BASE_LAYER);
-      meteorGroup.layers.enable(BLOOM_LAYER);
-      scene.add(meteorGroup);
+    function spawnMeteor(m){
+      // spawn in camera-centered group space
+      const r = THREE.MathUtils.randFloat(CONFIG.particles.meteorRadiusMin, CONFIG.particles.meteorRadiusMax);
 
+      // bias to upper hemisphere so it looks like sky meteors
+      const theta = THREE.MathUtils.randFloat(0, Math.PI * 2);
+      const phi = THREE.MathUtils.randFloat(0.15, 0.55); // smaller -> higher y
+
+      const sx = r * Math.sin(phi) * Math.cos(theta);
+      const sy = r * Math.cos(phi) + THREE.MathUtils.randFloat(20, 70);
+      const sz = r * Math.sin(phi) * Math.sin(theta);
+
+      m.mesh.position.set(sx, sy, sz);
+
+      // direction: downwards + slight sideways
+      const dx = THREE.MathUtils.randFloat(-1.0, 1.0);
+      const dy = -THREE.MathUtils.randFloat(1.8, 2.8);
+      const dz = THREE.MathUtils.randFloat(-0.7, 0.7);
+      const dir = new THREE.Vector3(dx, dy, dz).normalize();
+
+      // life & speed
+      m.life = 0;
+      m.maxLife = THREE.MathUtils.randFloat(0.55, 0.95);
+      const dist = THREE.MathUtils.randFloat(90, 150);
+      const speed = dist / m.maxLife; // units per second
+
+      m.vel.copy(dir).multiplyScalar(speed);
+
+      // scale (length/width)
+      m.baseLen = THREE.MathUtils.randFloat(14, 24);
+      m.baseWid = THREE.MathUtils.randFloat(1.2, 2.2);
+
+      m.mesh.scale.set(m.baseLen, m.baseWid, 1);
+
+      // face camera + rotate within plane to match dir projection
+      m.mesh.lookAt(camera.position);
+      const ang = Math.atan2(dir.y, dir.x);
+      m.mesh.rotateZ(ang);
+
+      m.mesh.material.opacity = 0.0;
+      m.active = true;
+    }
+
+    function createMeteors(){
       meteorTex = createMeteorTexture();
 
       const geo = new THREE.PlaneGeometry(1, 1, 1, 1);
       const mat = new THREE.MeshBasicMaterial({
         map: meteorTex,
         transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        depthTest: true,
         opacity: 0.0,
-        color: 0xdaf2ff
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
       });
-      mat.toneMapped = false;
 
-      meteorPool = [];
-      for (let i = 0; i < CONFIG.meteors.max; i++){
-        const m = new THREE.Mesh(geo, mat.clone());
-        m.visible = false;
-        m.renderOrder = -5;
-        m.layers.enable(BASE_LAYER);
-        m.layers.enable(BLOOM_LAYER);
-        meteorGroup.add(m);
-        meteorPool.push({
-          mesh: m,
-          localPos: new THREE.Vector3(),
-          localVel: new THREE.Vector3(),
+      meteorGroup = new THREE.Group();
+      meteorGroup.position.copy(camera.position);
+      scene.add(meteorGroup);
+
+      meteors = [];
+      for (let i = 0; i < CONFIG.particles.meteorPool; i++){
+        const mesh = new THREE.Mesh(geo, mat.clone());
+        mesh.layers.enable(BASE_LAYER);
+        mesh.layers.enable(BLOOM_LAYER); // ✅ 更明显、更“高级”
+        mesh.visible = false;
+        meteorGroup.add(mesh);
+
+        meteors.push({
+          mesh,
+          active: false,
+          vel: new THREE.Vector3(),
           life: 0,
-          maxLife: 0,
-          len: 0,
-          wid: 0
+          maxLife: 1,
+          baseLen: 18,
+          baseWid: 1.6
         });
       }
 
-      meteorSpawnT = 0;
+      meteorSpawnAcc = 0;
     }
 
-    function spawnMeteor(){
-      if (!meteorGroup || !meteorPool.length) return;
-      const m = meteorPool.find(mm => !mm.mesh.visible);
-      if (!m) return;
+    function updateMeteors(dt){
+      if (!meteorGroup || !meteors.length) return;
 
-      // spawn in camera local space (keeps background stable with camera drift)
-      const lx = THREE.MathUtils.randFloatSpread(90);
-      const ly = THREE.MathUtils.randFloat(20, 58);
-      const lz = -THREE.MathUtils.randFloat(160, 290);
+      // keep background centered on camera
+      meteorGroup.position.copy(camera.position);
 
-      m.localPos.set(lx, ly, lz);
+      meteorSpawnAcc += dt * CONFIG.particles.meteorSpawnPerSec;
+      const spawns = Math.floor(meteorSpawnAcc);
+      meteorSpawnAcc -= spawns;
 
-      // diagonal down-right, slightly towards camera
-      const vx = THREE.MathUtils.randFloat(32, 56);
-      const vy = -THREE.MathUtils.randFloat(12, 26);
-      const vz = THREE.MathUtils.randFloat(70, 120);
-
-      m.localVel.set(vx, vy, vz);
-
-      m.maxLife = THREE.MathUtils.randFloat(0.85, 1.55);
-      m.life = m.maxLife;
-
-      m.len = THREE.MathUtils.randFloat(18, 36);
-      m.wid = THREE.MathUtils.randFloat(0.9, 1.6);
-
-      m.mesh.visible = true;
-      m.mesh.material.opacity = 0.0;
-
-      // slight color variance
-      const c = new THREE.Color().setHSL(0.58 + Math.random()*0.04, 0.55, 0.80);
-      m.mesh.material.color.copy(c);
-    }
-
-    function updateMeteors(dt, t){
-      if (!meteorGroup || !meteorPool.length) return;
-
-      meteorSpawnT -= dt;
-      if (meteorSpawnT <= 0){
-        spawnMeteor();
-        meteorSpawnT = THREE.MathUtils.randFloat(CONFIG.meteors.spawnMin, CONFIG.meteors.spawnMax) * (0.92 + Math.random()*0.20);
+      for (let s = 0; s < spawns; s++){
+        const m = meteors.find(x => !x.active);
+        if (m) spawnMeteor(m);
       }
 
-      const invQ = camera.quaternion.clone().invert();
+      for (const m of meteors){
+        if (!m.active) continue;
 
-      for (const m of meteorPool){
-        if (!m.mesh.visible) continue;
-
-        m.life -= dt;
-        if (m.life <= 0){
+        m.life += dt;
+        if (m.life >= m.maxLife){
+          m.active = false;
           m.mesh.visible = false;
           m.mesh.material.opacity = 0.0;
           continue;
         }
 
-        // move in local space
-        m.localPos.addScaledVector(m.localVel, dt);
+        m.mesh.visible = true;
+        m.mesh.position.addScaledVector(m.vel, dt);
 
-        // if out of view-ish, kill early
-        if (m.localPos.y < -18 || m.localPos.z > -10 || Math.abs(m.localPos.x) > 140){
-          m.mesh.visible = false;
-          m.mesh.material.opacity = 0.0;
-          continue;
-        }
+        // fade in/out (cinematic)
+        const t = m.life / m.maxLife;
+        const fadeIn = THREE.MathUtils.smoothstep(t, 0.00, 0.18);
+        const fadeOut = 1.0 - THREE.MathUtils.smoothstep(t, 0.65, 1.00);
+        const op = 0.95 * fadeIn * fadeOut;
 
-        // convert to world space
-        const worldPos = m.localPos.clone().applyQuaternion(camera.quaternion).add(camera.position);
-        m.mesh.position.copy(worldPos);
+        m.mesh.material.opacity = op;
 
-        // billboard to camera, then rotate in screen plane to align with motion
-        m.mesh.quaternion.copy(camera.quaternion);
+        // slight stretching + shimmer
+        const stretch = 1.0 + 0.15 * Math.sin(clock.elapsedTime * 10 + m.mesh.id);
+        m.mesh.scale.set(m.baseLen * stretch, m.baseWid, 1);
 
-        const velLocal = m.localVel; // already local
-        const ang = Math.atan2(velLocal.y, velLocal.x);
-        m.mesh.rotateZ(ang);
-
-        // scale (length along X, width along Y)
-        m.mesh.scale.set(m.len, m.wid, 1);
-
-        // fade in/out with a punchy head
-        const k = m.life / m.maxLife;
-        const fadeIn = smoothstep(0.0, 0.18, 1 - k);
-        const fadeOut = smoothstep(0.0, 0.25, k);
-        const alpha = 0.55 * fadeIn * fadeOut * (0.92 + musicEnergy*0.22);
-        m.mesh.material.opacity = alpha;
+        // always face camera
+        m.mesh.lookAt(camera.position);
       }
-    }
-
-    function smoothstep(edge0, edge1, x){
-      const t = clamp((x - edge0) / (edge1 - edge0), 0, 1);
-      return t * t * (3 - 2 * t);
     }
 
     function createFloor() {
@@ -2040,7 +2073,7 @@
         camBtn.classList.add('active');
         isCameraRunning = true;
 
-        showMsg("摄像头已开启：🌀 食指转圈换树色 + 带动树旋转");
+        showMsg("摄像头已开启：☝️食指向上画圈 换树色 + 树跟着转");
       } catch (e) {
         console.warn("Camera error:", e);
         let msg = "Camera Error: " + e.name;
@@ -2067,49 +2100,49 @@
       if (result.landmarks && result.landmarks.length > 0) {
         STATE.hand.detected = true;
         const lm = result.landmarks[0];
+
         const now = performance.now();
 
-        // hand position (for subtle parallax in SCATTER)
+        // ✅ index-circle replaces thumbs-up
+        if (isIndexOnlyUp(lm)) {
+          updateCircleGesture(lm, now);
+        } else {
+          // reset tracking if finger not in "single index" state
+          STATE.gesture.circleActive = false;
+          STATE.gesture.circleTrack.length = 0;
+          STATE.gesture.spinBoost *= 0.92;
+        }
+
+        // use hand position for subtle motion
         STATE.hand.x = (lm[9].x - 0.5) * 2;
         STATE.hand.y = (lm[9].y - 0.5) * 2;
 
-        // detect index spin pose
-        const spinPose = isIndexSpinPose(lm);
-        if (spinPose) {
-          // keep tree mode while spinning (so it looks "together")
-          STATE.mode = 'TREE';
-          STATE.focusTarget = null;
-          updateIndexSpin(lm, now);
-        } else {
-          if (STATE.gesture.spin.active) resetSpin();
+        const wrist = lm[0];
+        const middleMCP = lm[9];
+        const handSize = Math.hypot(middleMCP.x - wrist.x, middleMCP.y - wrist.y);
+        if (handSize < 0.02) return;
 
-          // original mode logic (open / pinch)
-          const wrist = lm[0];
-          const middleMCP = lm[9];
-          const handSize = Math.hypot(middleMCP.x - wrist.x, middleMCP.y - wrist.y);
-          if (handSize < 0.02) return;
+        const tips = [lm[8], lm[12], lm[16], lm[20]];
+        let avgTipDist = 0;
+        tips.forEach(t => avgTipDist += Math.hypot(t.x - wrist.x, t.y - wrist.y));
+        avgTipDist /= 4;
 
-          const tips = [lm[8], lm[12], lm[16], lm[20]];
-          let avgTipDist = 0;
-          tips.forEach(t => avgTipDist += Math.hypot(t.x - wrist.x, t.y - wrist.y));
-          avgTipDist /= 4;
+        const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+        const extensionRatio = avgTipDist / handSize;
+        const pinchRatio = pinchDist / handSize;
 
-          const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
-          const extensionRatio = avgTipDist / handSize;
-          const pinchRatio = pinchDist / handSize;
-
-          if (extensionRatio < 1.5) { STATE.mode = 'TREE'; STATE.focusTarget = null; }
-          else if (pinchRatio < 0.35) {
-            if (STATE.mode !== 'FOCUS') {
-              STATE.mode = 'FOCUS';
-              const photos = particleSystem.filter(p => p.type === 'PHOTO');
-              if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random() * photos.length)].mesh;
-            }
-          } else if (extensionRatio > 1.7) { STATE.mode = 'SCATTER'; STATE.focusTarget = null; }
-        }
+        if (extensionRatio < 1.5) { STATE.mode = 'TREE'; STATE.focusTarget = null; }
+        else if (pinchRatio < 0.35) {
+          if (STATE.mode !== 'FOCUS') {
+            STATE.mode = 'FOCUS';
+            const photos = particleSystem.filter(p => p.type === 'PHOTO');
+            if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random() * photos.length)].mesh;
+          }
+        } else if (extensionRatio > 1.7) { STATE.mode = 'SCATTER'; STATE.focusTarget = null; }
       } else {
         STATE.hand.detected = false;
-        resetSpin();
+        STATE.gesture.circleActive = false;
+        STATE.gesture.circleTrack.length = 0;
       }
     }
 
@@ -2213,16 +2246,9 @@
 
       updateMusicEnergy();
 
-      // rotation control
-      const spin = STATE.gesture.spin;
+      // —— rotation baseline
       if (STATE.hand.detected) {
-        if (spin.active && !STATE.touch.active) {
-          // ✅ 食指转圈：直接带动树旋转（方向跟着你手指）
-          const v = clamp(spin.spinVel, -10, 10);
-          STATE.rotation.y += v * dt * 0.42;
-          // 轻微回正 X，保持高级感
-          STATE.rotation.x += (0 - STATE.rotation.x) * 2.6 * dt;
-        } else if (STATE.mode === 'SCATTER') {
+        if (STATE.mode === 'SCATTER') {
           const targetRotY = STATE.hand.x * Math.PI * 0.9;
           const targetRotX = STATE.hand.y * Math.PI * 0.25;
           STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt;
@@ -2239,12 +2265,19 @@
         }
       }
 
+      // ✅ while circling, tree rotates more (and stays for a bit)
+      if (STATE.gesture.spinBoost > 0.001) {
+        STATE.rotation.y += STATE.gesture.spinBoost * dt;
+        // smooth decay (cinematic)
+        STATE.gesture.spinBoost *= Math.exp(-dt * 1.6);
+      }
+
       mainGroup.rotation.y = STATE.rotation.y;
       mainGroup.rotation.x = STATE.rotation.x;
 
       updateAurora(t);
       updateStarfield(t);
-      updateMeteors(dt, t); // ✅ 流星更新
+      updateMeteors(dt);      // ✅ 流星更新（明显）
       updateFireflies(dt, t);
       updateGarlandBreath(t);
       updateCinematicCamera(dt, t);
