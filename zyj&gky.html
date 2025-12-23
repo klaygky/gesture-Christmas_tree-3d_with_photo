@@ -139,6 +139,8 @@
       min-width: 220px;
       backdrop-filter: blur(10px);
       box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+      line-height: 1.6;
+      letter-spacing: 1px;
     }
 
     #surprise-bar {
@@ -264,8 +266,9 @@
       border-radius: 10px;
       background: transparent;
       box-shadow: none;
-      filter: none;
       image-rendering: auto;
+      /* ✅ 功能1：展示原图时“稍微亮一些” */
+      filter: brightness(1.10) contrast(1.03) saturate(1.03);
     }
     .pv-fit #pv-img{
       max-width: 100%;
@@ -469,12 +472,14 @@
     }
 
     // ===== UI msg =====
-    function showMsg(txt) {
+    let msgTimer = null;
+    function showMsg(txt, ms = 2200) {
       const box = document.getElementById('msg-box');
       if (!box) return;
       box.innerText = txt;
       box.style.display = 'block';
-      setTimeout(() => { box.style.display = 'none'; }, 2200);
+      if (msgTimer) clearTimeout(msgTimer);
+      msgTimer = setTimeout(() => { box.style.display = 'none'; }, ms);
     }
 
     // ===== viewer scale =====
@@ -521,7 +526,7 @@
     pvModeOne?.addEventListener('click', () => setPVMode('ONE'));
     pvImg?.addEventListener('dblclick', () => setPVScale(pvScale === 1 ? 2 : 1));
 
-    // ===== palettes (index-circle) =====
+    // ===== palettes (index circle) =====
     const PALETTES = [
       { name: "Arctic Ice",      main:0x8bd3ff, accent:0xb9a2ff, glow:0x3aa7ff, metal:0xe9f4ff, fog:0x050a18 },
       { name: "Aurora Violet",   main:0xb9a2ff, accent:0x6fd2ff, glow:0xa78bff, metal:0xf2ecff, fog:0x06061a },
@@ -545,11 +550,8 @@
         starMaxR: 260,
         fireflyCount: 260,
 
-        // Meteors
-        meteorPool: 18,
-        meteorSpawnPerSec: 0.55,  // 越大越频繁
-        meteorRadiusMin: 160,
-        meteorRadiusMax: 255
+        // ✅ 流星更明显
+        meteorCount: 10
       },
       camera: { baseZ: 50 },
       render: { maxDPR: 3 },
@@ -567,16 +569,15 @@
       hand: { detected: false, x: 0, y: 0 },
       rotation: { x: 0, y: 0 },
       touch: { active: false, startX: 0, startY: 0, lastX: 0, lastY: 0 },
-      gesture: {
-        // index-circle
-        circleTrack: [],           // {x,y,t}
-        circleActive: false,
-        lastCircleAt: 0,
-        cooldownMs: 950,
 
-        // spin boost while circling
-        spinBoost: 0,              // extra rot speed (rad/s)
-        spinBoostMax: 6.0
+      // ✅ 食指转圈手势状态
+      gesture: {
+        lastCircleAt: 0,
+        cooldownMs: 1200,
+        circleAcc: 0,
+        lastAngle: null,
+        buf: [],
+        active: false
       }
     };
 
@@ -617,11 +618,14 @@
     // lens flare
     let flareLight = null;
 
-    // Meteors
+    // ✅ 顶部星星 Mesh（用于点击显示文字）
+    let topStarMesh = null;
+
+    // ✅ 流星系统
     let meteorGroup = null;
+    let meteors = [];
     let meteorTex = null;
-    let meteors = []; // {mesh, active, vel, life, maxLife, baseLen, baseWid}
-    let meteorSpawnAcc = 0;
+    let meteorHeadTex = null;
 
     // ===== Materials & Lights =====
     const MAT = { iceMat:null, silverMat:null, auroraMat2:null, frameMat:null, garlandMat:null };
@@ -696,154 +700,104 @@
       applyPalette(PALETTES[paletteIndex]);
     }
 
-    // ===== Index-circle gesture (single index finger up + circle) =====
-    function isIndexOnlyUp(lm){
+    // ===== 食指转圈检测（单食指朝上 + 转圈轨迹）=====
+    function isSingleIndexUp(lm){
       if (!lm || lm.length < 21) return false;
 
-      const wrist = lm[0];
       const indexTip = lm[8], indexPIP = lm[6], indexMCP = lm[5];
-
       const middleTip = lm[12], middlePIP = lm[10];
       const ringTip = lm[16], ringPIP = lm[14];
       const pinkyTip = lm[20], pinkyPIP = lm[18];
 
-      // index up (y smaller = higher)
-      const indexUp =
-        (indexTip.y < indexPIP.y) &&
-        (indexPIP.y < indexMCP.y) &&
-        (indexTip.y < wrist.y - 0.02);
+      // y 越小越“上”
+      const indexUp = (indexTip.y < indexPIP.y) && (indexPIP.y < indexMCP.y);
 
-      // other fingers folded
+      // 其他手指收起（tip 在 pip 之下）
       const othersFolded =
         (middleTip.y > middlePIP.y) &&
         (ringTip.y   > ringPIP.y) &&
         (pinkyTip.y  > pinkyPIP.y);
 
-      // keep "single index" generally in upper area (more like "往上")
-      const inUpper = indexTip.y < 0.65;
-
-      return indexUp && othersFolded && inUpper;
+      return indexUp && othersFolded;
     }
 
-    function pushCirclePoint(x, y, t){
-      const buf = STATE.gesture.circleTrack;
-      buf.push({ x, y, t });
-      // keep last 900ms
-      const maxMs = 900;
-      while (buf.length && (t - buf[0].t) > maxMs) buf.shift();
+    function normAngle(a){
+      while (a > Math.PI) a -= Math.PI * 2;
+      while (a < -Math.PI) a += Math.PI * 2;
+      return a;
     }
 
-    function unwrapDelta(a, b){
-      // return delta from a -> b in [-pi, pi]
-      let d = b - a;
-      while (d > Math.PI) d -= Math.PI * 2;
-      while (d < -Math.PI) d += Math.PI * 2;
-      return d;
-    }
+    function processIndexCircle(lm){
+      const now = performance.now();
 
-    function analyzeCircle(){
-      const buf = STATE.gesture.circleTrack;
-      if (!buf || buf.length < 12) return { ok:false };
-
-      // centroid
-      let cx = 0, cy = 0;
-      for (const p of buf){ cx += p.x; cy += p.y; }
-      cx /= buf.length; cy /= buf.length;
-
-      // radius stats
-      let rSum = 0;
-      const rs = new Array(buf.length);
-      for (let i = 0; i < buf.length; i++){
-        const dx = buf[i].x - cx, dy = buf[i].y - cy;
-        const r = Math.hypot(dx, dy);
-        rs[i] = r;
-        rSum += r;
-      }
-      const rAvg = rSum / buf.length;
-      let rVar = 0;
-      for (let i = 0; i < rs.length; i++){
-        const d = rs[i] - rAvg;
-        rVar += d*d;
-      }
-      const rStd = Math.sqrt(rVar / rs.length);
-
-      // thresholds (normalized in webcam coords)
-      const minR = 0.030;
-      const maxR = 0.18;
-      const maxStd = 0.040;
-
-      if (rAvg < minR || rAvg > maxR || rStd > maxStd) return { ok:false, cx, cy, rAvg, rStd };
-
-      // angles + unwrapped rotation
-      let totalRot = 0;
-      let lastAng = Math.atan2(buf[0].y - cy, buf[0].x - cx);
-      let unwrapped = lastAng;
-      const angs = [unwrapped];
-
-      for (let i = 1; i < buf.length; i++){
-        const ang = Math.atan2(buf[i].y - cy, buf[i].x - cx);
-        const d = unwrapDelta(lastAng, ang);
-        unwrapped += d;
-        totalRot += d;
-        lastAng = ang;
-        angs.push(unwrapped);
-      }
-
-      // angular velocity (last ~3 points)
-      let angVel = 0;
-      if (buf.length >= 4){
-        const i2 = buf.length - 1;
-        const i0 = buf.length - 4;
-        const dt = Math.max(1, (buf[i2].t - buf[i0].t)) / 1000;
-        const dA = angs[i2] - angs[i0];
-        angVel = dA / dt; // rad/s
-      }
-
-      const spanMs = buf[buf.length - 1].t - buf[0].t;
-
-      return {
-        ok:true,
-        cx, cy,
-        rAvg, rStd,
-        totalRot,
-        absRot: Math.abs(totalRot),
-        spanMs,
-        angVel
-      };
-    }
-
-    function updateCircleGesture(lm, nowMs){
-      const indexTip = lm[8];
-
-      pushCirclePoint(indexTip.x, indexTip.y, nowMs);
-
-      const a = analyzeCircle();
-      if (!a.ok){
-        STATE.gesture.circleActive = false;
-        // slight decay
-        STATE.gesture.spinBoost *= 0.92;
+      if (!isSingleIndexUp(lm)) {
+        STATE.gesture.active = false;
+        STATE.gesture.circleAcc = 0;
+        STATE.gesture.lastAngle = null;
+        STATE.gesture.buf.length = 0;
         return;
       }
 
-      // active while circling (even before trigger)
-      STATE.gesture.circleActive = true;
+      const tip = lm[8];
+      const p = { x: tip.x, y: tip.y, t: now };
+      const buf = STATE.gesture.buf;
+      buf.push(p);
+      if (buf.length > 18) buf.shift();
 
-      // map angular velocity to tree spin
-      const vel = Math.min(STATE.gesture.spinBoostMax, Math.abs(a.angVel) * 0.35);
-      STATE.gesture.spinBoost = Math.max(STATE.gesture.spinBoost, vel);
+      // 还不够点就先不判断
+      if (buf.length < 10) {
+        STATE.gesture.active = true;
+        return;
+      }
 
-      // trigger when almost a full circle within ~0.9s
-      const triggerRot = Math.PI * 2 * 0.85; // 306°+
-      const within = a.spanMs <= 950;
+      // 估计中心（均值）
+      let cx = 0, cy = 0;
+      for (const q of buf) { cx += q.x; cy += q.y; }
+      cx /= buf.length; cy /= buf.length;
 
-      if (within && a.absRot >= triggerRot){
-        if (nowMs - STATE.gesture.lastCircleAt > STATE.gesture.cooldownMs){
-          STATE.gesture.lastCircleAt = nowMs;
+      // 半径范围 & 运动幅度
+      let rSum = 0, rMin = 1e9, rMax = 0;
+      for (const q of buf) {
+        const r = Math.hypot(q.x - cx, q.y - cy);
+        rSum += r;
+        rMin = Math.min(rMin, r);
+        rMax = Math.max(rMax, r);
+      }
+      const rMean = rSum / buf.length;
+
+      // 轨迹长度（要有“转圈”的运动）
+      let path = 0;
+      for (let i = 1; i < buf.length; i++) {
+        path += Math.hypot(buf[i].x - buf[i-1].x, buf[i].y - buf[i-1].y);
+      }
+
+      // 合理阈值（归一化坐标系：0~1）
+      const radiusOk = (rMean > 0.03 && rMean < 0.18) && (rMax - rMin < 0.14);
+      const motionOk = path > 0.25;
+
+      const angle = Math.atan2(p.y - cy, p.x - cx);
+
+      if (STATE.gesture.lastAngle !== null) {
+        const dAng = normAngle(angle - STATE.gesture.lastAngle);
+
+        // ✅ 树跟着“转圈方向”一起转（越转越快更爽）
+        if (radiusOk && motionOk) {
+          STATE.rotation.y += dAng * 1.35;
+          STATE.gesture.circleAcc += dAng;
+          STATE.gesture.active = true;
+        }
+      }
+      STATE.gesture.lastAngle = angle;
+
+      // ✅ 转满接近一圈就换色（带冷却）
+      if (STATE.gesture.active && Math.abs(STATE.gesture.circleAcc) > Math.PI * 2 * 0.85) {
+        if (now - STATE.gesture.lastCircleAt > STATE.gesture.cooldownMs) {
+          STATE.gesture.lastCircleAt = now;
+          STATE.gesture.circleAcc = 0;
+          STATE.gesture.lastAngle = null;
+          buf.length = 0;
           cyclePalette();
-          // burst spin so “换色同时树也转得明显”
-          STATE.gesture.spinBoost = Math.min(STATE.gesture.spinBoostMax, Math.max(STATE.gesture.spinBoost, 3.5));
-          // reset track to prevent multi-trigger from same circle
-          STATE.gesture.circleTrack.length = 0;
+          showMsg("🌀 你转圈，我换色～", 1400);
         }
       }
     }
@@ -907,7 +861,7 @@
 
       createAuroraDome();
       createStarfield();
-      createMeteors(); // ✅ 流星背景
+      createMeteors();         // ✅ 流星
 
       createTextures();
       createFloor();
@@ -1262,184 +1216,166 @@
       starSystem.material.opacity = 0.86 + musicEnergy * 0.08;
     }
 
-    // ===== 流星（明显 + 高级：带尾迹贴图 + Bloom）=====
-    function createMeteorTexture(){
+    // ===== ✅ 流星雨（明显 & 高级）=====
+    function makeMeteorTexture(){
       const c = document.createElement('canvas');
-      c.width = 512;
-      c.height = 96;
+      c.width = 256; c.height = 64;
       const ctx = c.getContext('2d');
 
-      ctx.clearRect(0,0,c.width,c.height);
-
-      // tail gradient (left = tail, right = head)
-      const grad = ctx.createLinearGradient(0, 0, c.width, 0);
+      // 尾迹：左亮右透明（让方向一致）
+      const grad = ctx.createLinearGradient(0, 0, 256, 0);
       grad.addColorStop(0.00, 'rgba(255,255,255,0)');
-      grad.addColorStop(0.15, 'rgba(150,220,255,0.06)');
-      grad.addColorStop(0.40, 'rgba(180,235,255,0.22)');
-      grad.addColorStop(0.70, 'rgba(220,250,255,0.55)');
-      grad.addColorStop(0.92, 'rgba(255,255,255,0.95)');
-      grad.addColorStop(1.00, 'rgba(255,255,255,1)');
+      grad.addColorStop(0.15, 'rgba(255,255,255,0.10)');
+      grad.addColorStop(0.45, 'rgba(210,245,255,0.65)');
+      grad.addColorStop(1.00, 'rgba(255,255,255,0.95)');
 
-      // draw tapered tail
-      ctx.save();
-      ctx.translate(0, c.height/2);
       ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 256, 64);
 
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.quadraticCurveTo(c.width*0.35, -c.height*0.18, c.width*0.75, -c.height*0.06);
-      ctx.lineTo(c.width, 0);
-      ctx.quadraticCurveTo(c.width*0.75,  c.height*0.06, c.width*0.35,  c.height*0.18);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-
-      // head glow
-      const hx = c.width * 0.95;
-      const hy = c.height / 2;
-      const rg = ctx.createRadialGradient(hx, hy, 0, hx, hy, c.height*0.55);
-      rg.addColorStop(0.00, 'rgba(255,255,255,1)');
-      rg.addColorStop(0.25, 'rgba(220,250,255,0.9)');
-      rg.addColorStop(1.00, 'rgba(255,255,255,0)');
-      ctx.fillStyle = rg;
-      ctx.beginPath();
-      ctx.arc(hx, hy, c.height*0.55, 0, Math.PI*2);
-      ctx.fill();
+      // 轻微纵向柔化
+      const v = ctx.createLinearGradient(0, 0, 0, 64);
+      v.addColorStop(0.00, 'rgba(255,255,255,0)');
+      v.addColorStop(0.30, 'rgba(255,255,255,0.55)');
+      v.addColorStop(0.50, 'rgba(255,255,255,0.95)');
+      v.addColorStop(0.70, 'rgba(255,255,255,0.55)');
+      v.addColorStop(1.00, 'rgba(255,255,255,0)');
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.fillStyle = v;
+      ctx.fillRect(0, 0, 256, 64);
+      ctx.globalCompositeOperation = 'source-over';
 
       const tex = new THREE.CanvasTexture(c);
       tex.colorSpace = THREE.SRGBColorSpace;
-      tex.wrapS = THREE.ClampToEdgeWrapping;
-      tex.wrapT = THREE.ClampToEdgeWrapping;
-      tex.minFilter = THREE.LinearFilter;
-      tex.magFilter = THREE.LinearFilter;
       return tex;
     }
 
-    function spawnMeteor(m){
-      // spawn in camera-centered group space
-      const r = THREE.MathUtils.randFloat(CONFIG.particles.meteorRadiusMin, CONFIG.particles.meteorRadiusMax);
+    function makeMeteorHeadTexture(){
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 64;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      g.addColorStop(0.00, 'rgba(255,255,255,1)');
+      g.addColorStop(0.20, 'rgba(220,250,255,0.85)');
+      g.addColorStop(0.60, 'rgba(180,225,255,0.20)');
+      g.addColorStop(1.00, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(32, 32, 32, 0, Math.PI * 2); ctx.fill();
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    }
 
-      // bias to upper hemisphere so it looks like sky meteors
-      const theta = THREE.MathUtils.randFloat(0, Math.PI * 2);
-      const phi = THREE.MathUtils.randFloat(0.15, 0.55); // smaller -> higher y
+    function resetMeteor(m){
+      // 从左上方刷向右下方（更“经典流星”）
+      const camPos = camera.position;
 
-      const sx = r * Math.sin(phi) * Math.cos(theta);
-      const sy = r * Math.cos(phi) + THREE.MathUtils.randFloat(20, 70);
-      const sz = r * Math.sin(phi) * Math.sin(theta);
+      const startX = camPos.x - 140 + Math.random() * 140;
+      const startY = camPos.y + 70 + Math.random() * 80;
+      const startZ = camPos.z - 210 - Math.random() * 180;
 
-      m.mesh.position.set(sx, sy, sz);
+      m.mesh.position.set(startX, startY, startZ);
+      m.head.position.set(startX + m.len * 0.5, startY - m.len * 0.18, startZ);
 
-      // direction: downwards + slight sideways
-      const dx = THREE.MathUtils.randFloat(-1.0, 1.0);
-      const dy = -THREE.MathUtils.randFloat(1.8, 2.8);
-      const dz = THREE.MathUtils.randFloat(-0.7, 0.7);
-      const dir = new THREE.Vector3(dx, dy, dz).normalize();
+      m.life = 1.0;
+      m.speed = 65 + Math.random() * 45;
+      m.opacity = 0.0;
 
-      // life & speed
-      m.life = 0;
-      m.maxLife = THREE.MathUtils.randFloat(0.55, 0.95);
-      const dist = THREE.MathUtils.randFloat(90, 150);
-      const speed = dist / m.maxLife; // units per second
+      // 方向：右下（略带纵深）
+      m.dir.set(1.0, -0.32 - Math.random() * 0.12, 0.02).normalize();
 
-      m.vel.copy(dir).multiplyScalar(speed);
-
-      // scale (length/width)
-      m.baseLen = THREE.MathUtils.randFloat(14, 24);
-      m.baseWid = THREE.MathUtils.randFloat(1.2, 2.2);
-
-      m.mesh.scale.set(m.baseLen, m.baseWid, 1);
-
-      // face camera + rotate within plane to match dir projection
-      m.mesh.lookAt(camera.position);
-      const ang = Math.atan2(dir.y, dir.x);
-      m.mesh.rotateZ(ang);
-
-      m.mesh.material.opacity = 0.0;
-      m.active = true;
+      // 角度：让尾迹和方向对齐
+      const ang = Math.atan2(m.dir.y, m.dir.x);
+      m.mesh.rotation.z = ang;
     }
 
     function createMeteors(){
-      meteorTex = createMeteorTexture();
-
-      const geo = new THREE.PlaneGeometry(1, 1, 1, 1);
-      const mat = new THREE.MeshBasicMaterial({
-        map: meteorTex,
-        transparent: true,
-        opacity: 0.0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-      });
-
       meteorGroup = new THREE.Group();
-      meteorGroup.position.copy(camera.position);
       scene.add(meteorGroup);
 
-      meteors = [];
-      for (let i = 0; i < CONFIG.particles.meteorPool; i++){
-        const mesh = new THREE.Mesh(geo, mat.clone());
-        mesh.layers.enable(BASE_LAYER);
-        mesh.layers.enable(BLOOM_LAYER); // ✅ 更明显、更“高级”
-        mesh.visible = false;
-        meteorGroup.add(mesh);
+      meteorTex = makeMeteorTexture();
+      meteorHeadTex = makeMeteorHeadTexture();
 
-        meteors.push({
-          mesh,
-          active: false,
-          vel: new THREE.Vector3(),
-          life: 0,
-          maxLife: 1,
-          baseLen: 18,
-          baseWid: 1.6
+      const geo = new THREE.PlaneGeometry(16, 0.55);
+      const headGeo = new THREE.PlaneGeometry(1.0, 1.0);
+
+      for (let i = 0; i < CONFIG.particles.meteorCount; i++) {
+        const mat = new THREE.MeshBasicMaterial({
+          map: meteorTex,
+          transparent: true,
+          opacity: 0.0,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
         });
-      }
+        const mesh = new THREE.Mesh(geo, mat);
 
-      meteorSpawnAcc = 0;
+        const headMat = new THREE.MeshBasicMaterial({
+          map: meteorHeadTex,
+          transparent: true,
+          opacity: 0.0,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        const head = new THREE.Mesh(headGeo, headMat);
+
+        mesh.layers.enable(BASE_LAYER);
+        mesh.layers.enable(BLOOM_LAYER);
+        head.layers.enable(BASE_LAYER);
+        head.layers.enable(BLOOM_LAYER);
+
+        meteorGroup.add(mesh);
+        meteorGroup.add(head);
+
+        const m = {
+          mesh,
+          head,
+          dir: new THREE.Vector3(1, -0.35, 0).normalize(),
+          speed: 80,
+          life: 1,
+          opacity: 0,
+          len: 14 + Math.random() * 10
+        };
+        mesh.scale.set(m.len / 16, 1, 1);
+        resetMeteor(m);
+
+        // 初始错开
+        m.mesh.position.x += Math.random() * 140;
+        m.mesh.position.y += Math.random() * 80;
+
+        meteors.push(m);
+      }
     }
 
     function updateMeteors(dt){
-      if (!meteorGroup || !meteors.length) return;
+      if (!meteorGroup || meteors.length === 0) return;
 
-      // keep background centered on camera
-      meteorGroup.position.copy(camera.position);
+      for (const m of meteors) {
+        // 渐入渐出：让流星更真实
+        m.opacity = Math.min(1, m.opacity + dt * 2.8);
+        m.life -= dt * 0.45;
 
-      meteorSpawnAcc += dt * CONFIG.particles.meteorSpawnPerSec;
-      const spawns = Math.floor(meteorSpawnAcc);
-      meteorSpawnAcc -= spawns;
+        const v = m.speed * dt;
+        m.mesh.position.addScaledVector(m.dir, v);
 
-      for (let s = 0; s < spawns; s++){
-        const m = meteors.find(x => !x.active);
-        if (m) spawnMeteor(m);
-      }
+        // head 在前面一点点
+        m.head.position.copy(m.mesh.position).addScaledVector(m.dir, m.len * 0.52);
 
-      for (const m of meteors){
-        if (!m.active) continue;
+        // 透明度：前期强、后期弱
+        const fade = Math.max(0, Math.min(1, m.life));
+        const op = (0.15 + 0.85 * m.opacity) * fade;
+        m.mesh.material.opacity = op * (0.78 + musicEnergy * 0.22);
+        m.head.material.opacity = op * 0.95;
 
-        m.life += dt;
-        if (m.life >= m.maxLife){
-          m.active = false;
-          m.mesh.visible = false;
-          m.mesh.material.opacity = 0.0;
-          continue;
+        // 越界重生
+        const camPos = camera.position;
+        const dx = m.mesh.position.x - camPos.x;
+        const dy = m.mesh.position.y - camPos.y;
+        if (m.life <= 0 || dy < -95 || dx > 190) {
+          resetMeteor(m);
         }
-
-        m.mesh.visible = true;
-        m.mesh.position.addScaledVector(m.vel, dt);
-
-        // fade in/out (cinematic)
-        const t = m.life / m.maxLife;
-        const fadeIn = THREE.MathUtils.smoothstep(t, 0.00, 0.18);
-        const fadeOut = 1.0 - THREE.MathUtils.smoothstep(t, 0.65, 1.00);
-        const op = 0.95 * fadeIn * fadeOut;
-
-        m.mesh.material.opacity = op;
-
-        // slight stretching + shimmer
-        const stretch = 1.0 + 0.15 * Math.sin(clock.elapsedTime * 10 + m.mesh.id);
-        m.mesh.scale.set(m.baseLen * stretch, m.baseWid, 1);
-
-        // always face camera
-        m.mesh.lookAt(camera.position);
       }
+
+      // 让流星跟随相机飘一点点（防止相机移动时穿帮）
+      meteorGroup.position.copy(new THREE.Vector3(0,0,0));
     }
 
     function createFloor() {
@@ -1778,6 +1714,8 @@
       star.position.set(0, CONFIG.particles.treeHeight / 2 + 1.25, 0);
       star.layers.enable(BASE_LAYER);
       star.layers.enable(BLOOM_LAYER);
+      star.userData.isTopStar = true;     // ✅ 功能2：标记可点击
+      topStarMesh = star;
       mainGroup.add(star);
 
       flareLight = new THREE.PointLight(0xffffff, 1.0, 80);
@@ -2073,7 +2011,7 @@
         camBtn.classList.add('active');
         isCameraRunning = true;
 
-        showMsg("摄像头已开启：☝️食指向上画圈 换树色 + 树跟着转");
+        showMsg("摄像头已开启：单食指🖐️转圈 → 换色 & 树跟着转");
       } catch (e) {
         console.warn("Camera error:", e);
         let msg = "Camera Error: " + e.name;
@@ -2101,22 +2039,10 @@
         STATE.hand.detected = true;
         const lm = result.landmarks[0];
 
-        const now = performance.now();
+        // ✅ 食指转圈：换色+树跟着转
+        processIndexCircle(lm);
 
-        // ✅ index-circle replaces thumbs-up
-        if (isIndexOnlyUp(lm)) {
-          updateCircleGesture(lm, now);
-        } else {
-          // reset tracking if finger not in "single index" state
-          STATE.gesture.circleActive = false;
-          STATE.gesture.circleTrack.length = 0;
-          STATE.gesture.spinBoost *= 0.92;
-        }
-
-        // use hand position for subtle motion
-        STATE.hand.x = (lm[9].x - 0.5) * 2;
-        STATE.hand.y = (lm[9].y - 0.5) * 2;
-
+        // 你原来的“展开/捏合/散开”逻辑保留（不影响转圈换色）
         const wrist = lm[0];
         const middleMCP = lm[9];
         const handSize = Math.hypot(middleMCP.x - wrist.x, middleMCP.y - wrist.y);
@@ -2139,10 +2065,16 @@
             if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random() * photos.length)].mesh;
           }
         } else if (extensionRatio > 1.7) { STATE.mode = 'SCATTER'; STATE.focusTarget = null; }
+
+        STATE.hand.x = (lm[9].x - 0.5) * 2;
+        STATE.hand.y = (lm[9].y - 0.5) * 2;
+
       } else {
         STATE.hand.detected = false;
-        STATE.gesture.circleActive = false;
-        STATE.gesture.circleTrack.length = 0;
+        STATE.gesture.active = false;
+        STATE.gesture.circleAcc = 0;
+        STATE.gesture.lastAngle = null;
+        STATE.gesture.buf.length = 0;
       }
     }
 
@@ -2173,6 +2105,15 @@
           await setMusic(!musicOn);
         });
       }
+    }
+
+    function findAncestorFlag(obj, flagKey){
+      let o = obj;
+      for (let i = 0; i < 8 && o; i++) {
+        if (o.userData && o.userData[flagKey]) return o;
+        o = o.parent;
+      }
+      return null;
     }
 
     function setupTouchAndClick() {
@@ -2211,6 +2152,15 @@
 
         const intersects = raycaster.intersectObjects(mainGroup.children, true);
 
+        // ✅ 功能2：点击树顶星星弹出文字
+        for (let hit of intersects) {
+          const starObj = findAncestorFlag(hit.object, 'isTopStar');
+          if (starObj) {
+            showMsg("zyj和gky要永远在一起💖", 4200);
+            return;
+          }
+        }
+
         let clickedParticle = null;
         for (let hit of intersects) {
           let obj = hit.object;
@@ -2246,15 +2196,20 @@
 
       updateMusicEnergy();
 
-      // —— rotation baseline
+      // 手势存在时：如果不是转圈，就按原逻辑轻微漂移
       if (STATE.hand.detected) {
-        if (STATE.mode === 'SCATTER') {
-          const targetRotY = STATE.hand.x * Math.PI * 0.9;
-          const targetRotX = STATE.hand.y * Math.PI * 0.25;
-          STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt;
-          STATE.rotation.x += (targetRotX - STATE.rotation.x) * 3.0 * dt;
+        if (!STATE.gesture.active) {
+          if (STATE.mode === 'SCATTER') {
+            const targetRotY = STATE.hand.x * Math.PI * 0.9;
+            const targetRotX = STATE.hand.y * Math.PI * 0.25;
+            STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt;
+            STATE.rotation.x += (targetRotX - STATE.rotation.x) * 3.0 * dt;
+          } else {
+            STATE.rotation.y += 0.28 * dt;
+          }
         } else {
-          STATE.rotation.y += 0.28 * dt;
+          // 转圈时：让树更“跟手”
+          STATE.rotation.x += (0 - STATE.rotation.x) * 2.8 * dt;
         }
       } else if (!STATE.touch.active) {
         if (STATE.mode === 'TREE') {
@@ -2265,19 +2220,12 @@
         }
       }
 
-      // ✅ while circling, tree rotates more (and stays for a bit)
-      if (STATE.gesture.spinBoost > 0.001) {
-        STATE.rotation.y += STATE.gesture.spinBoost * dt;
-        // smooth decay (cinematic)
-        STATE.gesture.spinBoost *= Math.exp(-dt * 1.6);
-      }
-
       mainGroup.rotation.y = STATE.rotation.y;
       mainGroup.rotation.x = STATE.rotation.x;
 
       updateAurora(t);
       updateStarfield(t);
-      updateMeteors(dt);      // ✅ 流星更新（明显）
+      updateMeteors(dt);             // ✅ 流星更新
       updateFireflies(dt, t);
       updateGarlandBreath(t);
       updateCinematicCamera(dt, t);
