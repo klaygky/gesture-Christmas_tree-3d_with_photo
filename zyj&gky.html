@@ -1,10 +1,3 @@
-<!--
-  - @Project: Grand Luxury Tree - Christmas Edition (Cloud Image Support)
-  - @Author: wp/electronicminer (Modified for Cloud Support)
-  - @Date: 2025-12-07
-  - @Description: 3D Christmas tree with customizable Cloud Image loading.
-  - 如需使用或分发，请务必保留此作者声明。
--->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -183,11 +176,10 @@
       box-shadow: 0 18px 40px rgba(0,0,0,0.35), 0 0 26px rgba(140, 210, 255, 0.16);
     }
 
-    #webcam-wrapper,
-    #debug-info { display: none !important; }
+    #webcam-wrapper, #debug-info { display: none !important; }
     input[type="file"] { display: none; }
 
-    /* ===== 原图查看器：遮罩加深，避免 Bloom 透出造成“光圈错觉”===== */
+    /* ===== 原图查看器（提亮）===== */
     #photo-viewer{
       position: fixed;
       inset: 0;
@@ -243,7 +235,6 @@
       font-size: 12px;
       letter-spacing: 1px;
     }
-
     .pv-imgwrap{
       flex: 1;
       display:flex;
@@ -259,7 +250,6 @@
       -webkit-overflow-scrolling: touch;
       background: rgba(0,0,0,0.18);
     }
-
     #pv-img{
       object-fit: contain;
       transform-origin: center center;
@@ -267,17 +257,11 @@
       background: transparent;
       box-shadow: none;
       image-rendering: auto;
-      /* ✅ 功能1：展示原图时“稍微亮一些” */
+      /* ✅ 你要的：照片展示时稍微亮一点 */
       filter: brightness(1.10) contrast(1.03) saturate(1.03);
     }
-    .pv-fit #pv-img{
-      max-width: 100%;
-      max-height: 74vh;
-    }
-    .pv-one #pv-img{
-      max-width: none;
-      max-height: none;
-    }
+    .pv-fit #pv-img{ max-width: 100%; max-height: 74vh; }
+    .pv-one #pv-img{ max-width: none; max-height: none; }
 
     .pv-controls{
       display:flex;
@@ -313,6 +297,52 @@
     }
 
     body.pv-open #canvas-container{ pointer-events:none; }
+
+    /* ===== ✅ 新增：爱心粒子画布（在最顶层）===== */
+    #heart-canvas{
+      position: fixed;
+      inset: 0;
+      z-index: 999;
+      pointer-events: none;
+      display: none;
+    }
+
+    /* ===== ✅ 新增：星星点击的漂浮文字（高级动画）===== */
+    #love-overlay{
+      position: fixed;
+      inset: 0;
+      z-index: 998;
+      pointer-events: none;
+      display: none;
+      align-items: center;
+      justify-content: center;
+    }
+    .love-text{
+      padding: 14px 18px;
+      border-radius: 16px;
+      background: rgba(10,18,35,0.62);
+      border: 1px solid rgba(210,233,255,0.28);
+      backdrop-filter: blur(12px);
+      box-shadow: 0 22px 58px rgba(0,0,0,0.45), 0 0 30px rgba(255,170,210,0.10);
+      color: rgba(240, 252, 255, 0.96);
+      font-size: clamp(18px, 4.2vw, 32px);
+      letter-spacing: 1px;
+      text-align: center;
+      text-shadow: 0 0 18px rgba(255, 170, 210, 0.22), 0 0 28px rgba(160, 220, 255, 0.12);
+      transform: translateY(12px) scale(0.98);
+      opacity: 0;
+      animation: lovePop 0.45s ease-out forwards, loveFloat 2.6s ease-in-out 0.45s forwards;
+    }
+
+    @keyframes lovePop{
+      0%{ opacity:0; transform: translateY(18px) scale(0.92); filter: blur(2px); }
+      100%{ opacity:1; transform: translateY(0px) scale(1.00); filter: blur(0px); }
+    }
+    @keyframes loveFloat{
+      0%{ opacity:1; transform: translateY(0px) scale(1.00); }
+      70%{ opacity:1; transform: translateY(-26px) scale(1.01); }
+      100%{ opacity:0; transform: translateY(-42px) scale(1.02); }
+    }
   </style>
 
   <style>
@@ -357,7 +387,7 @@
   </div>
   <div id="debug-info"></div>
 
-  <!-- 原图查看器：默认 1:1 -->
+  <!-- 原图查看器 -->
   <div id="photo-viewer" aria-hidden="true" class="pv-one">
     <div class="pv-backdrop" id="pv-backdrop"></div>
     <div class="pv-panel">
@@ -381,12 +411,17 @@
     </div>
   </div>
 
+  <!-- ✅ 新增：爱心粒子 & 漂浮文字 -->
+  <canvas id="heart-canvas"></canvas>
+  <div id="love-overlay"><div class="love-text" id="love-text"></div></div>
+
   <script type="module">
     import * as THREE from 'three';
     import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+    import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     import { Lensflare, LensflareElement } from 'three/addons/objects/Lensflare.js';
     import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
@@ -412,6 +447,12 @@
     const pvModeOne = document.getElementById('pv-mode-1to1');
     const pvImgwrap = document.getElementById('pv-imgwrap');
     const pvTitle = pv.querySelector('.pv-title');
+
+    // ✅ 爱心 + 漂浮文字 dom
+    const loveOverlay = document.getElementById('love-overlay');
+    const loveTextEl = document.getElementById('love-text');
+    const heartCanvas = document.getElementById('heart-canvas');
+    const heartCtx = heartCanvas.getContext('2d', { alpha: true });
 
     // ===== Music analyser =====
     let musicOn = false;
@@ -482,15 +523,127 @@
       msgTimer = setTimeout(() => { box.style.display = 'none'; }, ms);
     }
 
+    // ===== ✅ 爱心粒子（2D 叠加）=====
+    let hearts = [];
+    let heartRAF = null;
+    let heartUntil = 0;
+
+    function resizeHeartCanvas(){
+      heartCanvas.width = Math.floor(window.innerWidth * (window.devicePixelRatio || 1));
+      heartCanvas.height = Math.floor(window.innerHeight * (window.devicePixelRatio || 1));
+      heartCanvas.style.width = window.innerWidth + 'px';
+      heartCanvas.style.height = window.innerHeight + 'px';
+      heartCtx.setTransform((window.devicePixelRatio || 1), 0, 0, (window.devicePixelRatio || 1), 0, 0);
+    }
+
+    function drawHeart(ctx, x, y, size, rot, alpha){
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(rot);
+      ctx.globalAlpha = alpha;
+
+      // 轻微渐变，让心更“高级”
+      const g = ctx.createRadialGradient(0, -size*0.2, 0, 0, 0, size*1.2);
+      g.addColorStop(0, 'rgba(255,255,255,0.95)');
+      g.addColorStop(0.35, 'rgba(255,170,210,0.88)');
+      g.addColorStop(1, 'rgba(140,210,255,0.20)');
+      ctx.fillStyle = g;
+
+      ctx.beginPath();
+      const s = size;
+      ctx.moveTo(0, s*0.25);
+      ctx.bezierCurveTo(s*0.55, -s*0.35, s*1.1, s*0.35, 0, s*1.1);
+      ctx.bezierCurveTo(-s*1.1, s*0.35, -s*0.55, -s*0.35, 0, s*0.25);
+      ctx.closePath();
+      ctx.fill();
+
+      // 高光
+      ctx.globalAlpha = alpha * 0.35;
+      ctx.fillStyle = 'rgba(255,255,255,0.65)';
+      ctx.beginPath();
+      ctx.ellipse(-s*0.18, -s*0.02, s*0.18, s*0.14, -0.3, 0, Math.PI*2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function spawnHeartsBurst(text){
+      // 漂浮文字
+      loveTextEl.textContent = text;
+      loveOverlay.style.display = 'flex';
+
+      // 重新触发 CSS 动画（强制重绘）
+      loveTextEl.classList.remove('love-text');
+      void loveTextEl.offsetWidth;
+      loveTextEl.classList.add('love-text');
+
+      // 爱心画布
+      resizeHeartCanvas();
+      heartCanvas.style.display = 'block';
+
+      // 生成粒子（中心向上喷）
+      hearts.length = 0;
+      const cx = window.innerWidth * 0.5;
+      const cy = window.innerHeight * 0.52;
+
+      const count = 46;
+      for (let i = 0; i < count; i++){
+        const a = (-Math.PI/2) + (Math.random()-0.5) * 1.2;
+        const sp = 2.2 + Math.random() * 3.0;
+        hearts.push({
+          x: cx + (Math.random()-0.5) * 26,
+          y: cy + (Math.random()-0.5) * 14,
+          vx: Math.cos(a) * sp * (0.65 + Math.random()*0.5),
+          vy: Math.sin(a) * sp * (0.75 + Math.random()*0.6),
+          g: 0.03 + Math.random()*0.03,
+          size: 7 + Math.random()*11,
+          rot: (Math.random()-0.5) * 0.8,
+          vr: (Math.random()-0.5) * 0.03,
+          alpha: 1,
+          life: 1
+        });
+      }
+
+      const now = performance.now();
+      heartUntil = now + 2600;
+
+      if (heartRAF) cancelAnimationFrame(heartRAF);
+      const step = () => {
+        const t = performance.now();
+        heartCtx.clearRect(0,0,window.innerWidth,window.innerHeight);
+
+        for (const h of hearts){
+          h.vy += h.g;
+          h.x += h.vx;
+          h.y += h.vy;
+          h.rot += h.vr;
+
+          h.life -= 0.012;
+          h.alpha = Math.max(0, Math.min(1, h.life));
+
+          drawHeart(heartCtx, h.x, h.y, h.size, h.rot, h.alpha * 0.95);
+        }
+
+        // 结束条件
+        if (t < heartUntil){
+          heartRAF = requestAnimationFrame(step);
+        } else {
+          heartCanvas.style.display = 'none';
+          loveOverlay.style.display = 'none';
+          hearts.length = 0;
+          heartRAF = null;
+        }
+      };
+      heartRAF = requestAnimationFrame(step);
+    }
+
     // ===== viewer scale =====
     let pvScale = 1;
-    let pvMode = 'ONE';
     function setPVScale(s){
       pvScale = Math.max(1, Math.min(6, s));
       pvImg.style.transform = `scale(${pvScale})`;
     }
     function setPVMode(mode){
-      pvMode = mode;
       const isFit = (mode === 'FIT');
       pv.classList.toggle('pv-fit', isFit);
       pv.classList.toggle('pv-one', !isFit);
@@ -526,7 +679,7 @@
     pvModeOne?.addEventListener('click', () => setPVMode('ONE'));
     pvImg?.addEventListener('dblclick', () => setPVScale(pvScale === 1 ? 2 : 1));
 
-    // ===== palettes (index circle) =====
+    // ===== palettes =====
     const PALETTES = [
       { name: "Arctic Ice",      main:0x8bd3ff, accent:0xb9a2ff, glow:0x3aa7ff, metal:0xe9f4ff, fog:0x050a18 },
       { name: "Aurora Violet",   main:0xb9a2ff, accent:0x6fd2ff, glow:0xa78bff, metal:0xf2ecff, fog:0x06061a },
@@ -549,8 +702,6 @@
         starMinR: 90,
         starMaxR: 260,
         fireflyCount: 260,
-
-        // ✅ 流星更明显
         meteorCount: 10
       },
       camera: { baseZ: 50 },
@@ -569,8 +720,6 @@
       hand: { detected: false, x: 0, y: 0 },
       rotation: { x: 0, y: 0 },
       touch: { active: false, startX: 0, startY: 0, lastX: 0, lastY: 0 },
-
-      // ✅ 食指转圈手势状态
       gesture: {
         lastCircleAt: 0,
         cooldownMs: 1200,
@@ -586,6 +735,8 @@
     let bloomComposer, finalComposer;
     let bloomPass = null;
     let vignettePass = null;
+    let afterimagePass = null;   // ✅ 拖影
+    let meteorFlash = 0;         // ✅ 爆闪强度（0~1）
 
     let mainGroup;
     let clock = new THREE.Clock();
@@ -618,10 +769,10 @@
     // lens flare
     let flareLight = null;
 
-    // ✅ 顶部星星 Mesh（用于点击显示文字）
+    // 顶部星星 Mesh
     let topStarMesh = null;
 
-    // ✅ 流星系统
+    // 流星系统
     let meteorGroup = null;
     let meteors = [];
     let meteorTex = null;
@@ -631,7 +782,6 @@
     const MAT = { iceMat:null, silverMat:null, auroraMat2:null, frameMat:null, garlandMat:null };
     const LIGHTS = { ambient:null, inner:null, key:null, rim:null, fill:null };
 
-    // ===== helpers =====
     function computeDPR(){
       let dpr = Math.min(window.devicePixelRatio || 1, CONFIG.render.maxDPR);
       const mp = (window.innerWidth * window.innerHeight * dpr * dpr) / 1e6;
@@ -700,7 +850,7 @@
       applyPalette(PALETTES[paletteIndex]);
     }
 
-    // ===== 食指转圈检测（单食指朝上 + 转圈轨迹）=====
+    // ===== 食指转圈检测 =====
     function isSingleIndexUp(lm){
       if (!lm || lm.length < 21) return false;
 
@@ -709,10 +859,7 @@
       const ringTip = lm[16], ringPIP = lm[14];
       const pinkyTip = lm[20], pinkyPIP = lm[18];
 
-      // y 越小越“上”
       const indexUp = (indexTip.y < indexPIP.y) && (indexPIP.y < indexMCP.y);
-
-      // 其他手指收起（tip 在 pip 之下）
       const othersFolded =
         (middleTip.y > middlePIP.y) &&
         (ringTip.y   > ringPIP.y) &&
@@ -720,7 +867,6 @@
 
       return indexUp && othersFolded;
     }
-
     function normAngle(a){
       while (a > Math.PI) a -= Math.PI * 2;
       while (a < -Math.PI) a += Math.PI * 2;
@@ -744,18 +890,12 @@
       buf.push(p);
       if (buf.length > 18) buf.shift();
 
-      // 还不够点就先不判断
-      if (buf.length < 10) {
-        STATE.gesture.active = true;
-        return;
-      }
+      if (buf.length < 10) { STATE.gesture.active = true; return; }
 
-      // 估计中心（均值）
       let cx = 0, cy = 0;
       for (const q of buf) { cx += q.x; cy += q.y; }
       cx /= buf.length; cy /= buf.length;
 
-      // 半径范围 & 运动幅度
       let rSum = 0, rMin = 1e9, rMax = 0;
       for (const q of buf) {
         const r = Math.hypot(q.x - cx, q.y - cy);
@@ -765,13 +905,9 @@
       }
       const rMean = rSum / buf.length;
 
-      // 轨迹长度（要有“转圈”的运动）
       let path = 0;
-      for (let i = 1; i < buf.length; i++) {
-        path += Math.hypot(buf[i].x - buf[i-1].x, buf[i].y - buf[i-1].y);
-      }
+      for (let i = 1; i < buf.length; i++) path += Math.hypot(buf[i].x - buf[i-1].x, buf[i].y - buf[i-1].y);
 
-      // 合理阈值（归一化坐标系：0~1）
       const radiusOk = (rMean > 0.03 && rMean < 0.18) && (rMax - rMin < 0.14);
       const motionOk = path > 0.25;
 
@@ -779,8 +915,6 @@
 
       if (STATE.gesture.lastAngle !== null) {
         const dAng = normAngle(angle - STATE.gesture.lastAngle);
-
-        // ✅ 树跟着“转圈方向”一起转（越转越快更爽）
         if (radiusOk && motionOk) {
           STATE.rotation.y += dAng * 1.35;
           STATE.gesture.circleAcc += dAng;
@@ -789,7 +923,6 @@
       }
       STATE.gesture.lastAngle = angle;
 
-      // ✅ 转满接近一圈就换色（带冷却）
       if (STATE.gesture.active && Math.abs(STATE.gesture.circleAcc) > Math.PI * 2 * 0.85) {
         if (now - STATE.gesture.lastCircleAt > STATE.gesture.cooldownMs) {
           STATE.gesture.lastCircleAt = now;
@@ -827,7 +960,7 @@
         const orbit = 0.75 * Math.sin(t * 0.6);
         CAM.posTarget.set(orbit, CAM.lookTarget.y + 0.45, CAM.lookTarget.z - 12.5);
         CAM.fovTarget = 38;
-        if (bloomPass) bloomPass.strength = 0.95 + musicEnergy * 0.10;
+        if (bloomPass) bloomPass.strength = 0.95 + musicEnergy * 0.10 + meteorFlash * 0.25;
       } else {
         CAM.lookTarget.set(0, 0.5, 0);
         const baseZ = CONFIG.camera.baseZ;
@@ -838,7 +971,7 @@
 
         CAM.posTarget.set(driftX, 2.0 + driftY, baseZ + modeBoost + dolly);
         CAM.fovTarget = 42;
-        if (bloomPass) bloomPass.strength = 1.05 + musicEnergy * 0.25;
+        if (bloomPass) bloomPass.strength = 1.05 + musicEnergy * 0.25 + meteorFlash * 0.35;
       }
 
       expDampVec(CAM.pos, CAM.posTarget, CAM.smoothPos, dt);
@@ -850,7 +983,7 @@
       camera.fov = expDampNum(camera.fov, CAM.fovTarget, CAM.smoothFov, dt);
       camera.updateProjectionMatrix();
 
-      if (flareLight) flareLight.intensity = 1.0 + musicEnergy * 0.25;
+      if (flareLight) flareLight.intensity = 1.0 + musicEnergy * 0.25 + meteorFlash * 0.30;
     }
 
     // ===== init =====
@@ -861,7 +994,7 @@
 
       createAuroraDome();
       createStarfield();
-      createMeteors();         // ✅ 流星
+      createMeteors();
 
       createTextures();
       createFloor();
@@ -877,6 +1010,8 @@
       setupTouchAndClick();
 
       applyPalette(PALETTES[paletteIndex]);
+
+      resizeHeartCanvas();
 
       const loader = document.getElementById('loader');
       loader.style.opacity = 0;
@@ -944,7 +1079,7 @@
       LIGHTS.fill = fill;
     }
 
-    // ===== Selective Bloom =====
+    // ===== Selective Bloom + ✅ Afterimage =====
     function setupPostProcessing() {
       const dpr = computeDPR();
 
@@ -1016,9 +1151,14 @@
       };
       vignettePass = new ShaderPass(VignetteShader);
 
+      // ✅ Afterimage（尾迹拖影），数值会在 animate() 动态调节
+      afterimagePass = new AfterimagePass();
+      afterimagePass.uniforms.damp.value = 0.90; // 默认轻微
+
       finalComposer = new EffectComposer(renderer);
       finalComposer.addPass(renderBase);
       finalComposer.addPass(finalPass);
+      finalComposer.addPass(afterimagePass);
       finalComposer.addPass(vignettePass);
 
       renderer.setPixelRatio(dpr);
@@ -1216,13 +1356,12 @@
       starSystem.material.opacity = 0.86 + musicEnergy * 0.08;
     }
 
-    // ===== ✅ 流星雨（明显 & 高级）=====
+    // ===== ✅ 流星雨（爆闪 + 拖影）=====
     function makeMeteorTexture(){
       const c = document.createElement('canvas');
       c.width = 256; c.height = 64;
       const ctx = c.getContext('2d');
 
-      // 尾迹：左亮右透明（让方向一致）
       const grad = ctx.createLinearGradient(0, 0, 256, 0);
       grad.addColorStop(0.00, 'rgba(255,255,255,0)');
       grad.addColorStop(0.15, 'rgba(255,255,255,0.10)');
@@ -1232,7 +1371,6 @@
       ctx.fillStyle = grad;
       ctx.fillRect(0, 0, 256, 64);
 
-      // 轻微纵向柔化
       const v = ctx.createLinearGradient(0, 0, 0, 64);
       v.addColorStop(0.00, 'rgba(255,255,255,0)');
       v.addColorStop(0.30, 'rgba(255,255,255,0.55)');
@@ -1266,7 +1404,6 @@
     }
 
     function resetMeteor(m){
-      // 从左上方刷向右下方（更“经典流星”）
       const camPos = camera.position;
 
       const startX = camPos.x - 140 + Math.random() * 140;
@@ -1280,12 +1417,18 @@
       m.speed = 65 + Math.random() * 45;
       m.opacity = 0.0;
 
-      // 方向：右下（略带纵深）
       m.dir.set(1.0, -0.32 - Math.random() * 0.12, 0.02).normalize();
 
-      // 角度：让尾迹和方向对齐
       const ang = Math.atan2(m.dir.y, m.dir.x);
       m.mesh.rotation.z = ang;
+
+      // ✅ 随机爆闪：重生时有概率触发强闪一下
+      if (Math.random() < 0.55) {
+        m.flash = 1.0;
+        meteorFlash = Math.max(meteorFlash, 0.85);
+      } else {
+        m.flash = 0.0;
+      }
     }
 
     function createMeteors(){
@@ -1332,12 +1475,12 @@
           speed: 80,
           life: 1,
           opacity: 0,
-          len: 14 + Math.random() * 10
+          len: 14 + Math.random() * 10,
+          flash: 0
         };
         mesh.scale.set(m.len / 16, 1, 1);
         resetMeteor(m);
 
-        // 初始错开
         m.mesh.position.x += Math.random() * 140;
         m.mesh.position.y += Math.random() * 80;
 
@@ -1349,33 +1492,30 @@
       if (!meteorGroup || meteors.length === 0) return;
 
       for (const m of meteors) {
-        // 渐入渐出：让流星更真实
         m.opacity = Math.min(1, m.opacity + dt * 2.8);
         m.life -= dt * 0.45;
 
+        // 爆闪衰减
+        m.flash = Math.max(0, m.flash - dt * 2.2);
+
         const v = m.speed * dt;
         m.mesh.position.addScaledVector(m.dir, v);
-
-        // head 在前面一点点
         m.head.position.copy(m.mesh.position).addScaledVector(m.dir, m.len * 0.52);
 
-        // 透明度：前期强、后期弱
         const fade = Math.max(0, Math.min(1, m.life));
-        const op = (0.15 + 0.85 * m.opacity) * fade;
-        m.mesh.material.opacity = op * (0.78 + musicEnergy * 0.22);
-        m.head.material.opacity = op * 0.95;
+        const baseOp = (0.15 + 0.85 * m.opacity) * fade;
 
-        // 越界重生
+        // ✅ 爆闪会让头更亮
+        const flashBoost = 1.0 + m.flash * 1.4;
+
+        m.mesh.material.opacity = baseOp * (0.78 + musicEnergy * 0.22) * flashBoost;
+        m.head.material.opacity = baseOp * 0.95 * flashBoost;
+
         const camPos = camera.position;
         const dx = m.mesh.position.x - camPos.x;
         const dy = m.mesh.position.y - camPos.y;
-        if (m.life <= 0 || dy < -95 || dx > 190) {
-          resetMeteor(m);
-        }
+        if (m.life <= 0 || dy < -95 || dx > 190) resetMeteor(m);
       }
-
-      // 让流星跟随相机飘一点点（防止相机移动时穿帮）
-      meteorGroup.position.copy(new THREE.Vector3(0,0,0));
     }
 
     function createFloor() {
@@ -1544,9 +1684,7 @@
             const desiredWorldPos = new THREE.Vector3(0, 2, 35);
             const invMatrix = new THREE.Matrix4().copy(mainGroup.matrixWorld).invert();
             target = desiredWorldPos.applyMatrix4(invMatrix);
-          } else {
-            target = this.posScatter;
-          }
+          } else target = this.posScatter;
         }
 
         const lerpSpeed = (mode === 'FOCUS' && this.mesh === focusTargetMesh) ? 5.0 : 2.0;
@@ -1567,9 +1705,7 @@
           }
         }
 
-        if (mode === 'FOCUS' && this.mesh === focusTargetMesh) {
-          this.mesh.lookAt(camera.position);
-        }
+        if (mode === 'FOCUS' && this.mesh === focusTargetMesh) this.mesh.lookAt(camera.position);
 
         let s = this.baseScale;
         if (this.isDust) {
@@ -1714,7 +1850,7 @@
       star.position.set(0, CONFIG.particles.treeHeight / 2 + 1.25, 0);
       star.layers.enable(BASE_LAYER);
       star.layers.enable(BLOOM_LAYER);
-      star.userData.isTopStar = true;     // ✅ 功能2：标记可点击
+      star.userData.isTopStar = true;
       topStarMesh = star;
       mainGroup.add(star);
 
@@ -1786,7 +1922,7 @@
     function updateGarlandBreath(t){
       if (!garlandMat) return;
       const breath = 0.16 + 0.08 * (0.5 + 0.5 * Math.sin(t*1.2));
-      garlandMat.emissiveIntensity = breath + musicEnergy * 0.22;
+      garlandMat.emissiveIntensity = breath + musicEnergy * 0.22 + meteorFlash * 0.12;
     }
 
     function createFireflies() {
@@ -1871,7 +2007,7 @@
       }
 
       fireflyPosAttr.needsUpdate = true;
-      fireflySystem.material.opacity = 0.66 + musicEnergy * 0.14;
+      fireflySystem.material.opacity = 0.66 + musicEnergy * 0.14 + meteorFlash * 0.08;
     }
 
     function createDust() {
@@ -1921,8 +2057,6 @@
       group.scale.set(0.82, 0.82, 0.82);
 
       group.userData.photoSrc = texture.userData?.src || null;
-      group.userData.photoW = width;
-      group.userData.photoH = height;
 
       group.layers.set(BASE_LAYER);
       frame.layers.set(BASE_LAYER);
@@ -2039,10 +2173,8 @@
         STATE.hand.detected = true;
         const lm = result.landmarks[0];
 
-        // ✅ 食指转圈：换色+树跟着转
         processIndexCircle(lm);
 
-        // 你原来的“展开/捏合/散开”逻辑保留（不影响转圈换色）
         const wrist = lm[0];
         const middleMCP = lm[9];
         const handSize = Math.hypot(middleMCP.x - wrist.x, middleMCP.y - wrist.y);
@@ -2090,6 +2222,8 @@
         finalComposer.setSize(window.innerWidth, window.innerHeight);
         if (bloomComposer.setPixelRatio) bloomComposer.setPixelRatio(dpr);
         if (finalComposer.setPixelRatio) finalComposer.setPixelRatio(dpr);
+
+        resizeHeartCanvas();
       }, { passive: true });
 
       if (fileInput) fileInput.addEventListener('change', handleImageUpload);
@@ -2152,11 +2286,13 @@
 
         const intersects = raycaster.intersectObjects(mainGroup.children, true);
 
-        // ✅ 功能2：点击树顶星星弹出文字
+        // ✅ 点击树顶星星：漂浮文字 + 爱心粒子
         for (let hit of intersects) {
           const starObj = findAncestorFlag(hit.object, 'isTopStar');
           if (starObj) {
-            showMsg("zyj和gky要永远在一起💖", 4200);
+            spawnHeartsBurst("zyj和gky要永远在一起💖");
+            // 同时给一点点“闪”反馈
+            meteorFlash = Math.max(meteorFlash, 0.55);
             return;
           }
         }
@@ -2164,9 +2300,7 @@
         let clickedParticle = null;
         for (let hit of intersects) {
           let obj = hit.object;
-          while (obj.parent && obj.parent !== mainGroup && obj.parent !== photoMeshGroup) {
-            obj = obj.parent;
-          }
+          while (obj.parent && obj.parent !== mainGroup && obj.parent !== photoMeshGroup) obj = obj.parent;
           const p = particleSystem.find(pp => pp.mesh === obj && pp.type === 'PHOTO');
           if (p) { clickedParticle = p; break; }
         }
@@ -2196,7 +2330,20 @@
 
       updateMusicEnergy();
 
-      // 手势存在时：如果不是转圈，就按原逻辑轻微漂移
+      // 爆闪衰减
+      meteorFlash = Math.max(0, meteorFlash - dt * 1.6);
+
+      // ✅ 拖影强度动态：流星/爆闪更明显，其他时间轻微
+      if (afterimagePass) {
+        const base = 0.88; // 平时轻
+        const boost = 0.08 * meteorFlash; // 爆闪时更拖
+        const focusReduce = (STATE.mode === 'FOCUS') ? 0.03 : 0.0; // focus 期间更干净
+        afterimagePass.uniforms.damp.value = Math.min(0.96, Math.max(0.84, base + boost - focusReduce));
+      }
+
+      // ✅ 爆闪会让整体曝光稍微跳一下（像真实长曝光）
+      renderer.toneMappingExposure = 1.45 + meteorFlash * 0.20;
+
       if (STATE.hand.detected) {
         if (!STATE.gesture.active) {
           if (STATE.mode === 'SCATTER') {
@@ -2208,7 +2355,6 @@
             STATE.rotation.y += 0.28 * dt;
           }
         } else {
-          // 转圈时：让树更“跟手”
           STATE.rotation.x += (0 - STATE.rotation.x) * 2.8 * dt;
         }
       } else if (!STATE.touch.active) {
@@ -2225,7 +2371,7 @@
 
       updateAurora(t);
       updateStarfield(t);
-      updateMeteors(dt);             // ✅ 流星更新
+      updateMeteors(dt);
       updateFireflies(dt, t);
       updateGarlandBreath(t);
       updateCinematicCamera(dt, t);
@@ -2233,7 +2379,6 @@
       particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
       updateSnow();
 
-      // Selective Bloom render
       camera.layers.set(BLOOM_LAYER);
       bloomComposer.render();
 
