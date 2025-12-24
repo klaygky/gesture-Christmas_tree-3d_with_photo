@@ -34,15 +34,6 @@
       -webkit-user-select: none;
     }
 
-    /* 星座模式下：整体背景“变色”更明显 */
-    body.constellation-on{
-      background:
-        radial-gradient(1200px 900px at 65% 40%, rgba(255,140,210,0.14), rgba(10,18,35,0.0) 58%),
-        radial-gradient(1000px 800px at 25% 62%, rgba(170,120,255,0.16), rgba(10,18,35,0.0) 62%),
-        linear-gradient(180deg, #040614 0%, #06061a 45%, #030511 100%);
-      background-color:#030511;
-    }
-
     body::before{
       content:"";
       position: fixed;
@@ -61,35 +52,6 @@
       pointer-events:none;
     }
 
-    /* ============ ✅ 星座背景层（在 canvas 下面） ============ */
-    #constellation-bg{
-      position: fixed;
-      inset: 0;
-      z-index: 0;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.55s ease;
-    }
-    body.constellation-on #constellation-bg{ opacity: 1; }
-
-    .constellation{
-      position:absolute;
-      top: 50%;
-      transform: translateY(-50%);
-      width: min(42vw, 540px);
-      height: min(68vh, 640px);
-      opacity: 0.95;
-      filter: drop-shadow(0 0 22px rgba(180,225,255,0.22));
-    }
-    .constellation.left{ left: max(18px, env(safe-area-inset-left)); }
-    .constellation.right{ right: max(18px, env(safe-area-inset-right)); }
-
-    .constellation svg{
-      width:100%;
-      height:100%;
-    }
-
-    /* ============ canvas ============ */
     #canvas-container {
       width: 100vw;
       height: 100vh;
@@ -191,7 +153,6 @@
       display: flex;
       gap: 12px;
       align-items: center;
-      transition: opacity .35s ease, transform .35s ease;
     }
     .control-btn {
       background: var(--ui-bg);
@@ -351,200 +312,6 @@
     }
 
     body.pv-open #canvas-container{ pointer-events:none; }
-
-    /* ============ ✅ 礼物盒开场（粉色、亮度更低） ============ */
-    body.intro #ui-layer{ opacity:0; }
-    body.intro #surprise-bar{ opacity:0; transform: translateX(-50%) translateY(10px); pointer-events:none; }
-    body.intro #canvas-container{ pointer-events:none; }
-
-    #intro-screen{
-      position: fixed;
-      inset: 0;
-      z-index: 350;
-      display:flex;
-      align-items:center;
-      justify-content:center;
-      pointer-events:auto;
-      transition: opacity .55s ease, transform .55s ease;
-    }
-    #intro-screen.hide{
-      opacity:0;
-      transform: scale(1.02);
-      pointer-events:none;
-    }
-    .intro-wrap{
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      gap: 16px;
-      padding: 18px 16px 10px;
-      border-radius: 18px;
-      background: rgba(10,18,35,0.35);
-      border: 1px solid rgba(210,233,255,0.16);
-      box-shadow: 0 22px 60px rgba(0,0,0,0.45);
-      backdrop-filter: blur(10px);
-    }
-    .gift{
-      width: 190px;
-      height: 190px;
-      position: relative;
-      transform-style: preserve-3d;
-      cursor: pointer;
-      filter: brightness(0.84) saturate(1.10); /* ✅ 亮度更低一点 */
-    }
-    .gift .box{
-      position:absolute;
-      left: 50%; top: 56%;
-      transform: translate(-50%,-50%);
-      width: 170px;
-      height: 120px;
-      border-radius: 16px;
-      background: linear-gradient(180deg, rgba(255,160,210,0.92), rgba(220,95,165,0.92));
-      border: 1px solid rgba(255,255,255,0.16);
-      box-shadow: 0 18px 40px rgba(0,0,0,0.35);
-    }
-    .gift .lid{
-      position:absolute;
-      left: 50%; top: 28%;
-      transform: translate(-50%,-50%) rotateX(0deg);
-      transform-origin: 50% 100%;
-      width: 182px;
-      height: 70px;
-      border-radius: 18px;
-      background: linear-gradient(180deg, rgba(255,190,225,0.90), rgba(230,115,185,0.90));
-      border: 1px solid rgba(255,255,255,0.16);
-      box-shadow: 0 16px 36px rgba(0,0,0,0.30);
-      transition: transform .72s cubic-bezier(.2,.9,.2,1);
-    }
-    .gift .ribbon-v{
-      position:absolute;
-      left:50%;
-      top: 56%;
-      transform: translate(-50%,-50%);
-      width: 26px;
-      height: 132px;
-      border-radius: 12px;
-      background: linear-gradient(180deg, rgba(255,240,250,0.92), rgba(255,200,230,0.92));
-      opacity: 0.92;
-      box-shadow: 0 0 16px rgba(255,175,215,0.20);
-    }
-    .gift .ribbon-h{
-      position:absolute;
-      left:50%;
-      top: 56%;
-      transform: translate(-50%,-50%);
-      width: 168px;
-      height: 26px;
-      border-radius: 12px;
-      background: linear-gradient(180deg, rgba(255,240,250,0.92), rgba(255,200,230,0.92));
-      opacity: 0.92;
-      box-shadow: 0 0 16px rgba(255,175,215,0.20);
-    }
-    .gift .bow{
-      position:absolute;
-      left: 50%;
-      top: 18%;
-      transform: translate(-50%,-50%);
-      width: 94px;
-      height: 56px;
-      filter: drop-shadow(0 8px 18px rgba(0,0,0,0.20));
-    }
-    .gift .bow:before, .gift .bow:after{
-      content:"";
-      position:absolute;
-      width: 44px;
-      height: 30px;
-      border-radius: 999px;
-      background: linear-gradient(180deg, rgba(255,240,250,0.95), rgba(255,190,225,0.90));
-      border: 1px solid rgba(255,255,255,0.16);
-      top: 50%;
-      transform: translateY(-50%) rotate(0deg);
-    }
-    .gift .bow:before{ left: 0; transform: translateY(-50%) rotate(-18deg); }
-    .gift .bow:after { right: 0; transform: translateY(-50%) rotate(18deg); }
-    .gift .knot{
-      position:absolute;
-      left:50%; top:50%;
-      transform: translate(-50%,-50%);
-      width: 16px; height: 16px;
-      border-radius: 6px;
-      background: rgba(255,225,240,0.95);
-      border: 1px solid rgba(255,255,255,0.16);
-    }
-
-    /* 点击礼物盒：轻微抖动 */
-    .gift.bounce{ animation: giftBounce .55s ease; }
-    @keyframes giftBounce{
-      0%{ transform: scale(1); }
-      30%{ transform: scale(1.03) rotate(-1deg); }
-      55%{ transform: scale(0.99) rotate(1deg); }
-      100%{ transform: scale(1); }
-    }
-
-    /* 打开：盖子掀开 */
-    #intro-screen.opening .gift .lid{
-      transform: translate(-50%,-50%) rotateX(78deg);
-    }
-
-    .intro-title{
-      color: rgba(230,250,255,0.92);
-      letter-spacing: 2px;
-      font-size: 14px;
-      text-align:center;
-      opacity: 0.92;
-    }
-    .intro-hint{
-      color: rgba(230,250,255,0.74);
-      letter-spacing: 1px;
-      font-size: 12px;
-      text-align:center;
-      opacity: 0.92;
-    }
-    #pop-btn{
-      appearance:none;
-      border:none;
-      cursor:pointer;
-      padding: 10px 18px;
-      border-radius: 999px;
-      letter-spacing: 6px;
-      font-weight: 700;
-      font-size: 14px;
-      color: rgba(255,255,255,0.92);
-      background: rgba(255,150,210,0.22);
-      border: 1px solid rgba(255,210,235,0.28);
-      box-shadow: 0 14px 34px rgba(0,0,0,0.32);
-      backdrop-filter: blur(10px);
-      transform: translateY(6px);
-      opacity: 0;
-      pointer-events:none;
-      transition: opacity .25s ease, transform .25s ease, box-shadow .25s ease;
-    }
-    #pop-btn.show{
-      opacity: 1;
-      transform: translateY(0);
-      pointer-events:auto;
-    }
-    #pop-btn:active{ transform: translateY(1px) scale(0.99); }
-
-    .pop-burst{
-      position:absolute;
-      top: -14px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: rgba(255,230,245,0.96);
-      font-size: 22px;
-      letter-spacing: 4px;
-      opacity: 0;
-      text-shadow: 0 0 22px rgba(255,170,220,0.28);
-    }
-    #intro-screen.opening .pop-burst{
-      animation: popBurst .62s ease forwards;
-    }
-    @keyframes popBurst{
-      0%{ opacity:0; transform: translateX(-50%) translateY(10px) scale(0.9); }
-      40%{ opacity:1; transform: translateX(-50%) translateY(-6px) scale(1.05); }
-      100%{ opacity:0; transform: translateX(-50%) translateY(-18px) scale(1.02); }
-    }
   </style>
 
   <style>
@@ -562,97 +329,7 @@
   </script>
 </head>
 
-<body class="intro">
-  <!-- ✅ 星座背景（在 canvas 下面） -->
-  <div id="constellation-bg" aria-hidden="true">
-    <!-- 左：处女座 Virgo -->
-    <div class="constellation left" aria-hidden="true">
-      <svg viewBox="0 0 520 640" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <filter id="gloV" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="2.2" result="b"/>
-            <feMerge>
-              <feMergeNode in="b"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-          <linearGradient id="lineV" x1="0" x2="1">
-            <stop offset="0" stop-color="rgba(230,250,255,0.85)"/>
-            <stop offset="1" stop-color="rgba(255,185,220,0.70)"/>
-          </linearGradient>
-        </defs>
-        <g filter="url(#gloV)">
-          <text x="36" y="74" fill="rgba(230,250,255,0.55)" font-size="26" letter-spacing="6">VIRGO</text>
-
-          <!-- stars -->
-          <g fill="rgba(255,255,255,0.92)">
-            <circle cx="120" cy="160" r="4.5"/>
-            <circle cx="190" cy="240" r="3.7"/>
-            <circle cx="240" cy="340" r="4.0"/>
-            <circle cx="200" cy="420" r="3.6"/>
-            <circle cx="270" cy="510" r="4.2"/>
-            <circle cx="330" cy="430" r="3.4"/>
-            <circle cx="360" cy="320" r="4.4"/>
-            <circle cx="300" cy="240" r="3.5"/>
-          </g>
-
-          <!-- glow dots -->
-          <g fill="rgba(160,220,255,0.25)">
-            <circle cx="120" cy="160" r="11"/>
-            <circle cx="240" cy="340" r="12"/>
-            <circle cx="360" cy="320" r="13"/>
-            <circle cx="270" cy="510" r="12"/>
-          </g>
-
-          <!-- lines -->
-          <path d="M120 160 L190 240 L240 340 L200 420 L270 510 L330 430 L360 320 L300 240 L190 240"
-                stroke="url(#lineV)" stroke-width="2.6" fill="none" opacity="0.95"/>
-        </g>
-      </svg>
-    </div>
-
-    <!-- 右：巨蟹座 Cancer -->
-    <div class="constellation right" aria-hidden="true">
-      <svg viewBox="0 0 520 640" xmlns="http://www.w3.org/2000/svg">
-        <defs>
-          <filter id="gloC" x="-40%" y="-40%" width="180%" height="180%">
-            <feGaussianBlur stdDeviation="2.2" result="b"/>
-            <feMerge>
-              <feMergeNode in="b"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-          <linearGradient id="lineC" x1="0" x2="1">
-            <stop offset="0" stop-color="rgba(210,245,255,0.80)"/>
-            <stop offset="1" stop-color="rgba(180,165,255,0.72)"/>
-          </linearGradient>
-        </defs>
-        <g filter="url(#gloC)">
-          <text x="312" y="74" fill="rgba(230,250,255,0.55)" font-size="26" letter-spacing="6" text-anchor="end">CANCER</text>
-
-          <g fill="rgba(255,255,255,0.92)">
-            <circle cx="340" cy="190" r="4.6"/>
-            <circle cx="280" cy="270" r="3.6"/>
-            <circle cx="320" cy="360" r="4.2"/>
-            <circle cx="250" cy="430" r="3.4"/>
-            <circle cx="330" cy="520" r="4.6"/>
-            <circle cx="390" cy="430" r="3.4"/>
-          </g>
-
-          <g fill="rgba(160,220,255,0.25)">
-            <circle cx="340" cy="190" r="12"/>
-            <circle cx="320" cy="360" r="13"/>
-            <circle cx="330" cy="520" r="13"/>
-          </g>
-
-          <path d="M340 190 L280 270 L320 360 L250 430 L330 520 L390 430 L320 360"
-                stroke="url(#lineC)" stroke-width="2.8" fill="none" opacity="0.95"/>
-        </g>
-      </svg>
-    </div>
-  </div>
-
-  <!-- Loader -->
+<body>
   <div id="loader">
     <div class="spinner"></div>
     <div class="loader-text">Loading Memories</div>
@@ -678,25 +355,6 @@
     <video id="webcam" autoplay playsinline webkit-playsinline></video>
   </div>
   <div id="debug-info"></div>
-
-  <!-- ✅ 礼物盒开场 -->
-  <div id="intro-screen" aria-hidden="false">
-    <div class="intro-wrap">
-      <div class="intro-title">🎁 A Gift For You</div>
-      <div style="position:relative;">
-        <div class="pop-burst">啪!</div>
-        <div class="gift" id="gift-box" title="点击我">
-          <div class="lid"></div>
-          <div class="box"></div>
-          <div class="ribbon-v"></div>
-          <div class="ribbon-h"></div>
-          <div class="bow"><div class="knot"></div></div>
-        </div>
-      </div>
-      <button id="pop-btn">啪</button>
-      <div class="intro-hint">先点礼物盒 → 再点 “啪” 打开</div>
-    </div>
-  </div>
 
   <!-- 原图查看器 -->
   <div id="photo-viewer" aria-hidden="true" class="pv-one">
@@ -740,18 +398,6 @@
     const musicBtn = document.getElementById('music-btn');
     const fileInput = document.getElementById('file-input');
     const folderInput = document.getElementById('folder-input');
-
-    // intro dom
-    const introScreen = document.getElementById('intro-screen');
-    const giftBox = document.getElementById('gift-box');
-    const popBtn = document.getElementById('pop-btn');
-
-    // constellation flag
-    const CONSTELL = { active:false };
-    function setConstellationActive(on){
-      CONSTELL.active = !!on;
-      document.body.classList.toggle('constellation-on', CONSTELL.active);
-    }
 
     // viewer dom
     const pv = document.getElementById('photo-viewer');
@@ -928,44 +574,6 @@
       gesture: { lastCircleAt: 0, cooldownMs: 1200, circleAcc: 0, lastAngle: null, buf: [], active: false }
     };
 
-    // ===== ✅ Intro (gift -> tree fly out) =====
-    const INTRO = {
-      stage: 'GIFT',      // GIFT -> OPEN -> LAUNCH -> DONE
-      armed: false,
-      t: 0,
-      durOpen: 0.65,
-      durLaunch: 1.05,
-      startY: -30,
-      endY: 0
-    };
-
-    function armGift(){
-      if (INTRO.stage !== 'GIFT') return;
-      INTRO.armed = true;
-      giftBox.classList.add('bounce');
-      setTimeout(()=>giftBox.classList.remove('bounce'), 560);
-      popBtn.classList.add('show');
-    }
-
-    function openGift(){
-      if (INTRO.stage !== 'GIFT' || !INTRO.armed) return;
-      INTRO.stage = 'OPEN';
-      INTRO.t = 0;
-      introScreen.classList.add('opening'); // lid opens + "啪" burst
-      popBtn.disabled = true;
-
-      // tree becomes visible but starts "inside box"
-      if (mainGroup){
-        mainGroup.visible = true;
-        mainGroup.position.set(0, INTRO.startY, 0);
-        mainGroup.scale.setScalar(0.12);
-      }
-      showMsg("🎁 打开啦！", 1200);
-    }
-
-    giftBox?.addEventListener('click', armGift);
-    popBtn?.addEventListener('click', openGift);
-
     // ===== THREE =====
     let scene, camera, renderer;
     let bloomComposer, finalComposer;
@@ -1035,6 +643,32 @@
       heartAcc: 0
     };
 
+    // ===== ✅ 礼物盒彩蛋（新增）=====
+    let giftRoot = null;      // attached to camera (HUD-style)
+    let giftGroup = null;     // rotating box group
+    let giftLid = null;
+    let giftBase = null;
+    let giftBow = null;
+    let giftGlow = null;
+
+    const GIFT = {
+      locked: true,      // true: tree hidden until opened
+      phase: 0,          // 0 idle, 1 open, 2 launch, 3 fade
+      t: 0,
+      opened: false,
+      // durations
+      durOpen: 0.62,
+      durLaunch: 0.95,
+      durFade: 0.60,
+      // cached
+      lidRot0: 0,
+      lidRot1: -1.15,    // opening angle
+      startWorld: new THREE.Vector3(),
+      startScale: 0.06,
+      endScale: 1.0
+    };
+
+    // ===== Materials & Lights =====
     const MAT = { iceMat:null, silverMat:null, auroraMat2:null, frameMat:null, garlandMat:null };
     const LIGHTS = { ambient:null, inner:null, key:null, rim:null, fill:null };
 
@@ -1262,6 +896,11 @@
 
       createLoveTextAndHearts();
 
+      // ✅ 新增：礼物盒（在树创建完后，把树隐藏掉，等礼物打开飞出）
+      createGiftBox();
+      mainGroup.visible = false;
+      GIFT.locked = true;
+
       loadPredefinedImages();
       setupPostProcessing();
       setupEvents();
@@ -1269,12 +908,11 @@
 
       applyPalette(PALETTES[paletteIndex]);
 
-      // ✅ 开场：先隐藏树
-      mainGroup.visible = false;
-
       const loader = document.getElementById('loader');
       loader.style.opacity = 0;
       setTimeout(() => loader.remove(), 800);
+
+      showMsg("🎁 点击底部粉色礼物盒 → ‘啪’打开，圣诞树飞出来～", 2600);
 
       animate();
     }
@@ -1282,9 +920,7 @@
     function initThree() {
       const container = document.getElementById('canvas-container');
       scene = new THREE.Scene();
-
-      // ✅ 关键：Three 背景透明，不会盖住“星座背景层”
-      scene.background = null;
+      scene.background = new THREE.Color(CONFIG.colors.bg);
       scene.fog = new THREE.FogExp2(CONFIG.colors.fog, 0.016);
 
       camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 1200);
@@ -1298,11 +934,10 @@
       renderer.outputColorSpace = THREE.SRGBColorSpace;
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.45;
-
-      // ✅ 透明清屏
-      renderer.setClearColor(0x000000, 0);
-
       container.appendChild(renderer.domElement);
+
+      // ✅ 为了把礼物“贴在屏幕底部”，需要把 camera 加入 scene
+      scene.add(camera);
 
       mainGroup = new THREE.Group();
       scene.add(mainGroup);
@@ -1371,7 +1006,10 @@
           },
           vertexShader: `
             varying vec2 vUv;
-            void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+            void main() {
+              vUv = uv;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
           `,
           fragmentShader: `
             uniform sampler2D baseTexture;
@@ -1391,7 +1029,10 @@
         uniforms: { tDiffuse: { value: null }, offset: { value: 1.05 }, darkness: { value: 1.08 } },
         vertexShader: `
           varying vec2 vUv;
-          void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
         `,
         fragmentShader: `
           uniform sampler2D tDiffuse;
@@ -1439,7 +1080,10 @@
         },
         vertexShader: `
           varying vec3 vPos;
-          void main(){ vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }
+          void main(){
+            vPos = position;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0);
+          }
         `,
         fragmentShader: `
           precision highp float;
@@ -1504,8 +1148,7 @@
     function updateAurora(t){
       if (!auroraMat) return;
       auroraMat.uniforms.uTime.value = t;
-      const dim = CONSTELL.active ? 0.55 : 1.0; // ✅ 星座出现时压暗
-      auroraMat.uniforms.uOpacity.value = (0.32 + musicEnergy * 0.10) * dim;
+      auroraMat.uniforms.uOpacity.value = 0.32 + musicEnergy * 0.10;
       if (auroraMesh){
         auroraMesh.rotation.y = t * 0.02;
         auroraMesh.rotation.x = Math.sin(t*0.07) * 0.02;
@@ -1605,12 +1248,10 @@
       starSystem.rotation.y = -STATE.rotation.y * 0.15;
       starSystem.rotation.x = -STATE.rotation.x * 0.08;
       starSystem.position.copy(camera.position);
-
-      const dim = CONSTELL.active ? 0.55 : 1.0; // ✅ 星座出现时压暗
-      starSystem.material.opacity = (0.86 + musicEnergy * 0.08) * dim;
+      starSystem.material.opacity = 0.86 + musicEnergy * 0.08;
     }
 
-    // ===== 流星雨（保持原版） =====
+    // ===== 流星雨 =====
     function makeMeteorTexture(){
       const c = document.createElement('canvas');
       c.width = 256; c.height = 64;
@@ -2361,7 +2002,7 @@
       }
     }
 
-    // ===== 星星飞出变文字（保持你清晰版本）=====
+    // ===== ✅ 星星飞出变文字（保持你原来的）=====
     function makeLoveTextTexture(text){
       const c = document.createElement('canvas');
       c.width = 1600;
@@ -2479,8 +2120,10 @@
       loveTextSprite = new THREE.Sprite(loveTextMat);
       loveTextSprite.scale.set(18, 3.4, 1);
       loveTextSprite.visible = false;
+
       loveTextSprite.layers.set(BASE_LAYER);
       loveTextSprite.layers.disable(BLOOM_LAYER);
+
       mainGroup.add(loveTextSprite);
 
       heartTex = makeHeartTexture();
@@ -2560,11 +2203,8 @@
       }
     }
 
-    // ✅ 点击树顶星星：同时打开星座背景
     function triggerStarLove(){
       if (!topStarMesh || STAR_LOVE.active) return;
-
-      setConstellationActive(true); // ✅ 背景切换
 
       STAR_LOVE.active = true;
       STAR_LOVE.phase = 0;
@@ -2614,7 +2254,10 @@
         topStarMesh.rotation.z += dt * (3.2 + musicEnergy*1.2);
         topStarMesh.rotation.y += dt * (1.6 + musicEnergy*0.9);
 
-        if (p >= 1) { STAR_LOVE.phase = 1; STAR_LOVE.t = 0; }
+        if (p >= 1) {
+          STAR_LOVE.phase = 1;
+          STAR_LOVE.t = 0;
+        }
       }
       else if (STAR_LOVE.phase === 1) {
         const p = clamp01(STAR_LOVE.t / STAR_LOVE.durMorphIn);
@@ -2644,6 +2287,7 @@
         if (p >= 1) {
           topStarMesh.visible = false;
           if (starMat) starMat.opacity = 0.0;
+
           STAR_LOVE.phase = 2;
           STAR_LOVE.t = 0;
         }
@@ -2665,7 +2309,10 @@
           spawnHearts(STAR_LOVE.flyPos.clone(), 1 + Math.floor(Math.random()*2));
         }
 
-        if (p >= 1) { STAR_LOVE.phase = 3; STAR_LOVE.t = 0; }
+        if (p >= 1) {
+          STAR_LOVE.phase = 3;
+          STAR_LOVE.t = 0;
+        }
       }
       else if (STAR_LOVE.phase === 3) {
         const p = clamp01(STAR_LOVE.t / STAR_LOVE.durFadeOut);
@@ -2712,9 +2359,256 @@
           STAR_LOVE.active = false;
           STAR_LOVE.phase = 0;
           STAR_LOVE.t = 0;
+        }
+      }
+    }
 
-          // ✅ 星座背景淡出
-          setTimeout(()=>setConstellationActive(false), 450);
+    // ===== ✅ 礼物盒：创建 + 动画 =====
+    function createGiftBox(){
+      giftRoot = new THREE.Group();
+      giftRoot.name = "GIFT_ROOT";
+      giftRoot.layers.enable(BASE_LAYER);
+      camera.add(giftRoot);
+
+      // 放在屏幕底部、Surprise 上方（你可以微调 y/z）
+      giftRoot.position.set(0, -7.2, -22.0);
+
+      giftGroup = new THREE.Group();
+      giftGroup.name = "GIFT_GROUP";
+      giftRoot.add(giftGroup);
+
+      // pink materials
+      const pinkMat = new THREE.MeshPhysicalMaterial({
+        color: 0xff7fb4,
+        metalness: 0.25,
+        roughness: 0.28,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.12,
+        envMapIntensity: 1.35,
+        emissive: 0x2a0b18,
+        emissiveIntensity: 0.10,
+        transparent: true,
+        opacity: 1.0
+      });
+
+      const ribbonMat = new THREE.MeshPhysicalMaterial({
+        color: 0xffd7ea,
+        metalness: 0.15,
+        roughness: 0.18,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.10,
+        envMapIntensity: 1.4,
+        emissive: 0xff6bb5,
+        emissiveIntensity: 0.22,
+        transparent: true,
+        opacity: 1.0
+      });
+
+      const edgeMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        metalness: 1.0,
+        roughness: 0.12,
+        envMapIntensity: 1.6,
+        emissive: 0x111122,
+        emissiveIntensity: 0.06,
+        transparent: true,
+        opacity: 1.0
+      });
+
+      // base
+      const baseGeo = new THREE.BoxGeometry(3.5, 2.6, 3.5);
+      giftBase = new THREE.Mesh(baseGeo, pinkMat);
+      giftBase.position.set(0, 0.0, 0);
+      giftBase.layers.enable(BASE_LAYER);
+      giftBase.layers.enable(BLOOM_LAYER);
+      giftBase.userData.isGift = true;
+      giftGroup.add(giftBase);
+
+      // lid
+      const lidGeo = new THREE.BoxGeometry(3.7, 1.0, 3.7);
+      giftLid = new THREE.Mesh(lidGeo, pinkMat);
+      giftLid.position.set(0, 1.8, 0);
+      giftLid.layers.enable(BASE_LAYER);
+      giftLid.layers.enable(BLOOM_LAYER);
+      giftLid.userData.isGift = true;
+      giftGroup.add(giftLid);
+
+      // little silver edges
+      const edgeGeo = new THREE.BoxGeometry(3.78, 0.12, 3.78);
+      const edge = new THREE.Mesh(edgeGeo, edgeMat);
+      edge.position.set(0, 2.28, 0);
+      edge.layers.enable(BASE_LAYER);
+      edge.layers.enable(BLOOM_LAYER);
+      giftGroup.add(edge);
+
+      // ribbons (cross)
+      const ribbon1 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 2.8, 3.62), ribbonMat);
+      ribbon1.position.set(0, 0.10, 0);
+      ribbon1.layers.enable(BASE_LAYER); ribbon1.layers.enable(BLOOM_LAYER);
+      giftGroup.add(ribbon1);
+
+      const ribbon2 = new THREE.Mesh(new THREE.BoxGeometry(3.62, 2.8, 0.55), ribbonMat);
+      ribbon2.position.set(0, 0.10, 0);
+      ribbon2.layers.enable(BASE_LAYER); ribbon2.layers.enable(BLOOM_LAYER);
+      giftGroup.add(ribbon2);
+
+      // bow (two torus knots)
+      giftBow = new THREE.Group();
+      giftBow.position.set(0, 2.55, 0);
+      giftGroup.add(giftBow);
+
+      const bowGeo = new THREE.TorusKnotGeometry(0.36, 0.14, 84, 12);
+      const bowL = new THREE.Mesh(bowGeo, ribbonMat);
+      bowL.position.set(-0.38, 0.05, 0);
+      bowL.rotation.set(0.2, 0.8, 0.4);
+      bowL.layers.enable(BASE_LAYER); bowL.layers.enable(BLOOM_LAYER);
+
+      const bowR = new THREE.Mesh(bowGeo, ribbonMat);
+      bowR.position.set(0.38, 0.05, 0);
+      bowR.rotation.set(-0.2, -0.8, -0.4);
+      bowR.layers.enable(BASE_LAYER); bowR.layers.enable(BLOOM_LAYER);
+
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.24, 28, 28), ribbonMat);
+      knot.layers.enable(BASE_LAYER); knot.layers.enable(BLOOM_LAYER);
+
+      giftBow.add(bowL, bowR, knot);
+
+      // subtle glow under box
+      const glowMat = new THREE.MeshBasicMaterial({
+        color: 0xff6bb5,
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+      });
+      giftGlow = new THREE.Mesh(new THREE.CircleGeometry(2.8, 48), glowMat);
+      giftGlow.rotation.x = -Math.PI/2;
+      giftGlow.position.set(0, -1.35, 0);
+      giftGlow.layers.enable(BASE_LAYER);
+      giftGlow.layers.enable(BLOOM_LAYER);
+      giftGroup.add(giftGlow);
+
+      giftGroup.scale.setScalar(0.75);
+      giftGroup.rotation.set(0.12, 0, 0);
+
+      GIFT.lidRot0 = giftLid.rotation.x;
+    }
+
+    function setGiftOpacity(alpha){
+      if (!giftGroup) return;
+      giftGroup.traverse((o)=>{
+        if (o.material && o.material.transparent) {
+          o.material.opacity = alpha;
+        }
+      });
+      if (giftGlow?.material) giftGlow.material.opacity = 0.22 * alpha;
+    }
+
+    function triggerGiftOpen(){
+      if (!GIFT.locked || GIFT.phase !== 0) return;
+      GIFT.phase = 1;
+      GIFT.t = 0;
+      showMsg("啪！🎁", 900);
+
+      // 小爆炸爱心（用你现有的爱心粒子）
+      // 在盒子附近撒一波（把 giftRoot 的 local 转成 mainGroup local 不方便，所以直接用世界空间近似：等 tree 出来时再撒）
+    }
+
+    function updateGift(dt, t){
+      if (!giftRoot || !giftGroup) return;
+
+      // idle rotation + bob
+      if (GIFT.phase === 0) {
+        const rot = 0.65 + musicEnergy * 0.55;
+        giftGroup.rotation.y += dt * rot;
+        const bob = Math.sin(t * 2.0) * 0.06;
+        giftRoot.position.y = -7.2 + bob;
+        if (giftGlow?.material) giftGlow.material.opacity = 0.18 + 0.10 * (0.5 + 0.5*Math.sin(t*2.2)) + musicEnergy*0.10;
+      }
+
+      // opening lid
+      if (GIFT.phase === 1) {
+        GIFT.t += dt;
+        const p = clamp01(GIFT.t / GIFT.durOpen);
+        const e = easeInOutCubic(p);
+
+        // hinge effect: move lid pivot back a little
+        giftLid.position.set(0, 1.8, 0.0);
+        giftLid.rotation.x = THREE.MathUtils.lerp(GIFT.lidRot0, GIFT.lidRot1, e);
+
+        // small shake
+        giftGroup.rotation.y += dt * (2.6 + musicEnergy*1.2);
+        giftGroup.rotation.z = Math.sin(t*26) * 0.01 * (1-e);
+
+        if (p >= 1) {
+          // start launch
+          GIFT.phase = 2;
+          GIFT.t = 0;
+
+          // get gift world position (where tree should spawn)
+          giftRoot.updateMatrixWorld(true);
+          giftGroup.updateMatrixWorld(true);
+          giftGroup.getWorldPosition(GIFT.startWorld);
+
+          // show tree at gift pos, small scale
+          mainGroup.visible = true;
+          mainGroup.position.copy(GIFT.startWorld);
+          mainGroup.scale.setScalar(GIFT.startScale);
+
+          // reset rotations for a clean reveal
+          STATE.rotation.x = 0;
+          STATE.rotation.y = 0;
+
+          // hearts burst at spawn
+          // (hearts are in mainGroup local space; we spawn at current mainGroup position's local origin)
+          spawnHearts(new THREE.Vector3(0, 0, 0), 18);
+        }
+      }
+
+      // launch tree to center
+      if (GIFT.phase === 2) {
+        GIFT.t += dt;
+        const p = clamp01(GIFT.t / GIFT.durLaunch);
+        const e = easeOutCubic(p);
+
+        // tree flies up to origin (0,0,0) of scene
+        mainGroup.position.lerpVectors(GIFT.startWorld, new THREE.Vector3(0, 0, 0), e);
+        const s = THREE.MathUtils.lerp(GIFT.startScale, GIFT.endScale, e);
+        mainGroup.scale.setScalar(s);
+
+        // add a little spin during flight
+        STATE.rotation.y += dt * (0.9 + musicEnergy*0.6);
+        STATE.rotation.x += dt * 0.08;
+
+        // sparkle hearts while rising
+        if (Math.random() < 0.28) spawnHearts(new THREE.Vector3(0, 0, 0), 2);
+
+        if (p >= 1) {
+          // finalize
+          mainGroup.position.set(0,0,0);
+          mainGroup.scale.setScalar(1);
+          GIFT.locked = false;
+          GIFT.opened = true;
+
+          // fade gift away
+          GIFT.phase = 3;
+          GIFT.t = 0;
+        }
+      }
+
+      // fade gift out
+      if (GIFT.phase === 3) {
+        GIFT.t += dt;
+        const p = clamp01(GIFT.t / GIFT.durFade);
+        const e = easeInOutCubic(p);
+
+        setGiftOpacity(1.0 - e);
+        giftRoot.position.y = -7.2 - e * 2.0;
+        giftGroup.rotation.y += dt * 0.8;
+
+        if (p >= 1) {
+          giftRoot.visible = false;
+          GIFT.phase = 99;
         }
       }
     }
@@ -2857,7 +2751,6 @@
       const container = document.getElementById('canvas-container');
 
       container.addEventListener('pointerdown', (e) => {
-        if (document.body.classList.contains('intro')) return;
         STATE.touch.active = true;
         STATE.touch.startX = e.clientX;
         STATE.touch.startY = e.clientY;
@@ -2867,6 +2760,7 @@
 
       window.addEventListener('pointermove', (e) => {
         if (!STATE.touch.active) return;
+        // 礼物阶段也允许轻微拖动（但你想完全禁用也可以在这里判断 GIFT.locked）
         const deltaX = e.clientX - STATE.touch.lastX;
         const deltaY = e.clientY - STATE.touch.lastY;
         STATE.rotation.y += deltaX * 0.005;
@@ -2877,8 +2771,6 @@
       }, { passive: true });
 
       window.addEventListener('pointerup', (e) => {
-        if (document.body.classList.contains('intro')) return;
-
         const moveDist = Math.hypot(e.clientX - STATE.touch.startX, e.clientY - STATE.touch.startY);
         const wasDragging = moveDist > 10;
         STATE.touch.active = false;
@@ -2890,9 +2782,24 @@
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
 
+        // ✅ 先检测礼物盒点击（树还没出来时最重要）
+        if (GIFT.locked && giftRoot && giftRoot.visible) {
+          const hitsGift = raycaster.intersectObjects(giftRoot.children, true);
+          if (hitsGift && hitsGift.length > 0) {
+            const isGift = findAncestorFlag(hitsGift[0].object, 'isGift') || hitsGift[0].object.userData?.isGift;
+            if (isGift || true) { // 命中 giftRoot 就开
+              triggerGiftOpen();
+              return;
+            }
+          }
+        }
+
+        // 树未解锁时，其它点击不处理
+        if (GIFT.locked) return;
+
         const intersects = raycaster.intersectObjects(mainGroup.children, true);
 
-        // 点击树顶星星
+        // 点击树顶星星：星星飞出变文字，再回来
         for (let hit of intersects) {
           const starObj = findAncestorFlag(hit.object, 'isTopStar');
           if (starObj) {
@@ -2929,84 +2836,40 @@
       }, { passive: true });
     }
 
-    // ✅ Intro：树从礼物盒里飞出来
-    function updateIntro(dt){
-      if (INTRO.stage === 'GIFT') return;
-
-      INTRO.t += dt;
-
-      if (INTRO.stage === 'OPEN') {
-        // 等盖子打开完
-        const p = clamp01(INTRO.t / INTRO.durOpen);
-        if (p >= 1) {
-          INTRO.stage = 'LAUNCH';
-          INTRO.t = 0;
-        }
-      } else if (INTRO.stage === 'LAUNCH') {
-        const p = clamp01(INTRO.t / INTRO.durLaunch);
-        const e = easeOutCubic(p);
-
-        if (mainGroup){
-          const y = THREE.MathUtils.lerp(INTRO.startY, INTRO.endY, e);
-          mainGroup.position.y = y;
-
-          // 轻微“冲出感” + 回弹
-          const s = THREE.MathUtils.lerp(0.12, 1.0, e) * (1.0 + 0.05*Math.sin(Math.PI*e));
-          mainGroup.scale.setScalar(s);
-
-          // 向上飞时给一点点旋转，挺酷
-          mainGroup.rotation.y += dt * (0.6 + musicEnergy*0.4);
-        }
-
-        if (p >= 1) {
-          INTRO.stage = 'DONE';
-          INTRO.t = 0;
-
-          document.body.classList.remove('intro');
-          introScreen.classList.add('hide');
-          introScreen.setAttribute('aria-hidden','true');
-
-          // 正常状态修正
-          if (mainGroup){
-            mainGroup.position.y = 0;
-            mainGroup.scale.setScalar(1.0);
-          }
-        }
-      }
-    }
-
     function animate() {
       requestAnimationFrame(animate);
       const dt = clock.getDelta();
       const t = clock.elapsedTime;
 
       updateMusicEnergy();
-      updateIntro(dt);
 
-      if (STATE.hand.detected) {
-        if (!STATE.gesture.active) {
-          if (STATE.mode === 'SCATTER') {
-            const targetRotY = STATE.hand.x * Math.PI * 0.9;
-            const targetRotX = STATE.hand.y * Math.PI * 0.25;
-            STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt;
-            STATE.rotation.x += (targetRotX - STATE.rotation.x) * 3.0 * dt;
+      // 礼物阶段：树还没出来时，别让树逻辑“抢戏”，但背景（星空/极光/雪）照常跑
+      if (!GIFT.locked) {
+        if (STATE.hand.detected) {
+          if (!STATE.gesture.active) {
+            if (STATE.mode === 'SCATTER') {
+              const targetRotY = STATE.hand.x * Math.PI * 0.9;
+              const targetRotX = STATE.hand.y * Math.PI * 0.25;
+              STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt;
+              STATE.rotation.x += (targetRotX - STATE.rotation.x) * 3.0 * dt;
+            } else {
+              STATE.rotation.y += 0.28 * dt;
+            }
           } else {
-            STATE.rotation.y += 0.28 * dt;
+            STATE.rotation.x += (0 - STATE.rotation.x) * 2.8 * dt;
           }
-        } else {
-          STATE.rotation.x += (0 - STATE.rotation.x) * 2.8 * dt;
+        } else if (!STATE.touch.active) {
+          if (STATE.mode === 'TREE') {
+            STATE.rotation.y += 0.26 * dt;
+            STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt;
+          } else {
+            STATE.rotation.y += 0.10 * dt;
+          }
         }
-      } else if (!STATE.touch.active) {
-        if (STATE.mode === 'TREE') {
-          STATE.rotation.y += 0.26 * dt;
-          STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt;
-        } else {
-          STATE.rotation.y += 0.10 * dt;
-        }
-      }
 
-      mainGroup.rotation.y = STATE.rotation.y;
-      mainGroup.rotation.x = STATE.rotation.x;
+        mainGroup.rotation.y = STATE.rotation.y;
+        mainGroup.rotation.x = STATE.rotation.x;
+      }
 
       updateAurora(t);
       updateStarfield(t);
@@ -3015,10 +2878,13 @@
       updateGarlandBreath(t);
       updateCinematicCamera(dt, t);
 
+      updateGift(dt, t); // ✅ 礼物盒动画
       updateStarLove(dt, t);
       updateHearts(dt);
 
-      particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
+      if (!GIFT.locked) {
+        particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
+      }
       updateSnow();
 
       camera.layers.set(BLOOM_LAYER);
