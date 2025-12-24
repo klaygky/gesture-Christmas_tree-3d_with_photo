@@ -33,7 +33,6 @@
       user-select: none;
       -webkit-user-select: none;
     }
-
     body::before{
       content:"";
       position: fixed;
@@ -267,17 +266,10 @@
       background: transparent;
       box-shadow: none;
       image-rendering: auto;
-      /* 展示原图时稍微亮一些 */
       filter: brightness(1.10) contrast(1.03) saturate(1.03);
     }
-    .pv-fit #pv-img{
-      max-width: 100%;
-      max-height: 74vh;
-    }
-    .pv-one #pv-img{
-      max-width: none;
-      max-height: none;
-    }
+    .pv-fit #pv-img{ max-width: 100%; max-height: 74vh; }
+    .pv-one #pv-img{ max-width: none; max-height: none; }
 
     .pv-controls{
       display:flex;
@@ -311,7 +303,6 @@
       text-align: center;
       flex-basis: 100%;
     }
-
     body.pv-open #canvas-container{ pointer-events:none; }
   </style>
 
@@ -452,10 +443,7 @@
     }
 
     function updateMusicEnergy(){
-      if (!analyser || !musicOn || !freqData) {
-        musicEnergy *= 0.92;
-        return;
-      }
+      if (!analyser || !musicOn || !freqData) { musicEnergy *= 0.92; return; }
       analyser.getByteFrequencyData(freqData);
       const n = freqData.length;
       const bassN = Math.max(6, Math.floor(n * 0.22));
@@ -516,7 +504,6 @@
       pvImg.src = '';
       document.body.classList.remove('pv-open');
     }
-
     pvClose?.addEventListener('click', closePhotoViewer);
     pvBackdrop?.addEventListener('click', closePhotoViewer);
     pvZoomIn?.addEventListener('click', () => setPVScale(pvScale * 1.25));
@@ -621,30 +608,51 @@
     let meteorTex = null;
     let meteorHeadTex = null;
 
+    // ===== ✅ 新增：雪落地堆积（地面 mask）+ 树枝/装饰轻微积雪（材质 snow shader）=====
+    const FLOOR_Y = -14;
+    const FLOOR_R = 22;
+    let snowMaskCanvas = null, snowMaskCtx = null, snowMaskTex = null, snowOverlayMesh = null;
+    let snowHit = null;                  // 每个雪粒是否已经“落地记录过”
+    let snowAccum = 0.0;                 // 0~1 积雪程度
+    let snowDepositCounter = 0;          // 统计落地次数（用于平滑积雪）
+    const snowMats = [];                 // 被 patch 的材质列表，用于更新 uSnow
+
+    // ===== ✅ 新增：礼物盒彩蛋（树下出现盒子，打开喷烟花/照片）=====
+    let giftGroup = null, giftLidPivot = null;
+    let giftGlow = null;
+    const GIFT = {
+      active:false, opened:false, phase:0, t:0,
+      durOpen:0.55, durBurst:0.15, durHold:1.7, durClose:0.55
+    };
+    let sparkTex = null;
+    let sparkPool = [];
+    let photoBurstPool = [];
+    const LOADED_PHOTO_TEXTURES = [];
+
+    // ===== ✅ 新增：左右星座图（巨蟹座/处女座）=====
+    let constTex = null;
+    let cancer = null, virgo = null;
+
     // ===== “星星飞出变文字”系统 =====
     let loveTextSprite = null;
     let loveTextTex = null;
-    let loveTextMat = null; // ✅ 文字材质：用它统一控制 opacity（亮度）
+    let loveTextMat = null;
     let heartPool = [];
     let heartTex = null;
 
     const STAR_LOVE = {
       active: false,
-      phase: 0, // 0 fly, 1 morphIn, 2 hold, 3 fadeOut, 4 return
+      phase: 0,
       t: 0,
-      // durations (seconds)
       durFly: 0.55,
       durMorphIn: 0.32,
       durHold: 2.20,
       durFadeOut: 0.34,
       durReturn: 0.55,
-      // saved transform (local space, since star is child of mainGroup)
       origPos: new THREE.Vector3(),
       origScale: new THREE.Vector3(),
       origRot: new THREE.Euler(),
-      // targets
       flyPos: new THREE.Vector3(),
-      // heart spawn
       heartAcc: 0
     };
 
@@ -718,6 +726,124 @@
       paletteIndex = (paletteIndex + 1) % PALETTES.length;
       applyPalette(PALETTES[paletteIndex]);
       showMsg(`🌀 Palette: ${PALETTES[paletteIndex].name}`);
+    }
+
+    // ===== ✅ 新增：积雪材质 patch（装饰/“树枝”轻微积雪）=====
+    function patchSnowMaterial(mat){
+      if (!mat || mat.userData?.snowPatched) return;
+      mat.userData = mat.userData || {};
+      mat.userData.snowPatched = true;
+
+      const prev = mat.onBeforeCompile;
+      mat.onBeforeCompile = (shader) => {
+        prev && prev(shader);
+        shader.uniforms.uSnow = { value: snowAccum };
+
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vWorldNormal;')
+          .replace('#include <beginnormal_vertex>', '#include <beginnormal_vertex>\nvWorldNormal = normalize(mat3(modelMatrix) * objectNormal);');
+
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nvarying vec3 vWorldNormal;\nuniform float uSnow;')
+          .replace('#include <output_fragment>', `
+            float snowMask = smoothstep(0.35, 0.92, vWorldNormal.y) * uSnow;
+            snowMask *= (0.75 + 0.25 * smoothstep(-14.0, 10.0, vViewPosition.y)); // 上部更明显一点点
+            vec3 snowCol = vec3(0.94, 0.97, 1.0);
+            outgoingLight = mix(outgoingLight, snowCol * (0.85 + 0.15*outgoingLight), snowMask * 0.62);
+            #include <output_fragment>
+          `);
+
+        mat.userData.snowShader = shader;
+      };
+
+      snowMats.push(mat);
+      mat.needsUpdate = true;
+    }
+
+    function updateSnowUniform(){
+      for (const m of snowMats){
+        const sh = m.userData?.snowShader;
+        if (sh && sh.uniforms?.uSnow) sh.uniforms.uSnow.value = snowAccum;
+      }
+    }
+
+    // ===== ✅ 新增：地面积雪 mask + overlay =====
+    function initSnowAccumulation(){
+      const size = 512;
+      snowMaskCanvas = document.createElement('canvas');
+      snowMaskCanvas.width = size;
+      snowMaskCanvas.height = size;
+      snowMaskCtx = snowMaskCanvas.getContext('2d', { alpha:true });
+      snowMaskCtx.clearRect(0,0,size,size);
+
+      // 先铺一点非常淡的底雾（更自然）
+      const g = snowMaskCtx.createRadialGradient(size/2,size/2,20,size/2,size/2,size/2);
+      g.addColorStop(0,'rgba(255,255,255,0.03)');
+      g.addColorStop(1,'rgba(255,255,255,0)');
+      snowMaskCtx.fillStyle = g;
+      snowMaskCtx.fillRect(0,0,size,size);
+
+      snowMaskTex = new THREE.CanvasTexture(snowMaskCanvas);
+      snowMaskTex.colorSpace = THREE.SRGBColorSpace;
+      snowMaskTex.needsUpdate = true;
+
+      // overlay 圆盘（略高于地面）
+      const geo = new THREE.CircleGeometry(FLOOR_R, 64);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xeaf6ff,
+        roughness: 0.95,
+        metalness: 0.0,
+        transparent: true,
+        opacity: 0.92,
+        alphaMap: snowMaskTex,
+        depthWrite: false
+      });
+      snowOverlayMesh = new THREE.Mesh(geo, mat);
+      snowOverlayMesh.rotation.x = -Math.PI/2;
+      snowOverlayMesh.position.y = FLOOR_Y + 0.02;
+      snowOverlayMesh.layers.enable(BASE_LAYER);
+      snowOverlayMesh.layers.enable(BLOOM_LAYER);
+      snowOverlayMesh.renderOrder = 2;
+      scene.add(snowOverlayMesh);
+    }
+
+    function depositSnowAt(x, z, intensity=1.0){
+      if (!snowMaskCtx || !snowMaskTex) return;
+      const r = Math.hypot(x, z);
+      if (r > FLOOR_R) return;
+
+      const size = snowMaskCanvas.width;
+      const u = (x / (FLOOR_R*2)) + 0.5;
+      const v = (z / (FLOOR_R*2)) + 0.5;
+
+      const px = u * size;
+      const py = (1 - v) * size;
+
+      const spotR = (6 + Math.random()*10) * (0.7 + 0.6*intensity);
+      const alpha = (0.06 + Math.random()*0.08) * intensity;
+
+      const grd = snowMaskCtx.createRadialGradient(px,py,0,px,py,spotR);
+      grd.addColorStop(0, `rgba(255,255,255,${alpha})`);
+      grd.addColorStop(1, 'rgba(255,255,255,0)');
+      snowMaskCtx.fillStyle = grd;
+      snowMaskCtx.beginPath();
+      snowMaskCtx.arc(px,py,spotR,0,Math.PI*2);
+      snowMaskCtx.fill();
+
+      // 少量“压实”点
+      if (Math.random() < 0.25){
+        snowMaskCtx.fillStyle = `rgba(255,255,255,${alpha*0.55})`;
+        snowMaskCtx.beginPath();
+        snowMaskCtx.arc(px + (Math.random()-0.5)*6, py + (Math.random()-0.5)*6, 2.0 + Math.random()*2.0, 0, Math.PI*2);
+        snowMaskCtx.fill();
+      }
+
+      snowMaskTex.needsUpdate = true;
+
+      // 积雪程度缓慢增长（会影响树上“轻微积雪”）
+      snowDepositCounter++;
+      const target = clamp01(snowAccum + 0.00055 * intensity);
+      snowAccum += (target - snowAccum) * 0.45;
     }
 
     // ===== 食指转圈检测 =====
@@ -839,10 +965,13 @@
         if (bloomPass) bloomPass.strength = 1.05 + musicEnergy * 0.25;
       }
 
-      // ⭐点击星星动画期间：轻微拉近更“演示感”
       if (STAR_LOVE.active) {
         CAM.fovTarget = 40;
         if (bloomPass) bloomPass.strength = 1.25 + musicEnergy * 0.25;
+      }
+      if (GIFT.active) {
+        CAM.fovTarget = 41;
+        if (bloomPass) bloomPass.strength = 1.18 + musicEnergy * 0.22;
       }
 
       expDampVec(CAM.pos, CAM.posTarget, CAM.smoothPos, dt);
@@ -865,17 +994,22 @@
 
       createAuroraDome();
       createStarfield();
+      createConstellations();          // ✅ 左右星座（巨蟹/处女）
       createMeteors();
 
       createTextures();
       createFloor();
+      initSnowAccumulation();          // ✅ 地面积雪 overlay
       createParticles();
       createGarland();
       createFireflies();
       createDust();
       createSnow();
 
-      createLoveTextAndHearts(); // ✅ 星星飞出变文字+爱心
+      createGiftBox();                // ✅ 礼物盒
+      createGiftParticles();          // ✅ 礼物喷射粒子池
+
+      createLoveTextAndHearts();
 
       loadPredefinedImages();
       setupPostProcessing();
@@ -1064,7 +1198,6 @@
           uniform vec3 uColorA;
           uniform vec3 uColorB;
           uniform vec3 uColorC;
-
           float hash(vec2 p){
             p = fract(p*vec2(123.34,456.21));
             p += dot(p,p+45.32);
@@ -1080,38 +1213,29 @@
             vec2 u = f*f*(3.0-2.0*f);
             return mix(a,b,u.x) + (c-a)*u.y*(1.0-u.x) + (d-b)*u.x*u.y;
           }
-
           void main(){
             vec3 p = normalize(vPos);
             float lat = p.y * 0.5 + 0.5;
             float lon = atan(p.z, p.x) / 6.28318;
             lon = lon + 0.5;
-
             float t = uTime * 0.035;
             vec2 uv = vec2(lon*3.5, lat*2.2);
-
             float n1 = noise(uv + vec2(0.0, t));
             float n2 = noise(uv*2.0 + vec2(1.7, -t*1.3));
             float n3 = noise(uv*4.0 + vec2(-2.1, t*1.9));
-
             float band = smoothstep(0.25, 0.85, pow(lat, 1.2));
             float waves = sin((uv.x + n2*1.2) * 6.28318 + t*3.0) * 0.5 + 0.5;
-
             float aur = (n1*0.55 + n2*0.30 + n3*0.15);
             aur = aur * waves * band;
-
             float mask = smoothstep(0.15, 0.95, lat) * (1.0 - smoothstep(0.00, 0.28, 1.0-lat));
             aur *= mask;
-
             vec3 col = mix(uColorA, uColorB, n2);
             col = mix(col, uColorC, pow(waves, 5.0) * 0.25);
-
             float alpha = aur * uOpacity;
             gl_FragColor = vec4(col * aur, alpha);
           }
         `
       });
-
       auroraMesh = new THREE.Mesh(geo, auroraMat);
       scene.add(auroraMesh);
     }
@@ -1144,6 +1268,9 @@
       sCtx.fill();
       const starTex = new THREE.CanvasTexture(sCan);
       starTex.colorSpace = THREE.SRGBColorSpace;
+
+      // 给星座用同一张更小的星点
+      constTex = starTex;
 
       const positions = new Float32Array(count * 3);
       const colors = new Float32Array(count * 3);
@@ -1201,7 +1328,6 @@
 
     function updateStarfield(t) {
       if (!starSystem || !starColorAttr || !starBase) return;
-
       const colors = starColorAttr.array;
       const count = CONFIG.particles.starCount;
 
@@ -1220,6 +1346,107 @@
       starSystem.rotation.x = -STATE.rotation.x * 0.08;
       starSystem.position.copy(camera.position);
       starSystem.material.opacity = 0.86 + musicEnergy * 0.08;
+    }
+
+    // ===== ✅ 新增：星座图（左：巨蟹座，右：处女座）=====
+    function makeConstellation(nodes, edges, offsetX){
+      const group = new THREE.Group();
+
+      const ptsPos = new Float32Array(nodes.length * 3);
+      for (let i=0;i<nodes.length;i++){
+        const [nx, ny] = nodes[i];
+        ptsPos[i*3+0] = offsetX + nx * 18;
+        ptsPos[i*3+1] = 18 + ny * 12;
+        ptsPos[i*3+2] = -210;
+      }
+
+      const ptsGeo = new THREE.BufferGeometry();
+      ptsGeo.setAttribute('position', new THREE.BufferAttribute(ptsPos, 3));
+      const ptsMat = new THREE.PointsMaterial({
+        size: 0.92,
+        map: constTex,
+        transparent: true,
+        opacity: 0.92,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        color: 0xeaf6ff
+      });
+      const pts = new THREE.Points(ptsGeo, ptsMat);
+
+      const linePos = new Float32Array(edges.length * 2 * 3);
+      for (let e=0;e<edges.length;e++){
+        const [a,b] = edges[e];
+        linePos[e*6+0] = ptsPos[a*3+0];
+        linePos[e*6+1] = ptsPos[a*3+1];
+        linePos[e*6+2] = ptsPos[a*3+2];
+        linePos[e*6+3] = ptsPos[b*3+0];
+        linePos[e*6+4] = ptsPos[b*3+1];
+        linePos[e*6+5] = ptsPos[b*3+2];
+      }
+      const lineGeo = new THREE.BufferGeometry();
+      lineGeo.setAttribute('position', new THREE.BufferAttribute(linePos, 3));
+      const lineMat = new THREE.LineBasicMaterial({
+        color: 0xbfefff,
+        transparent: true,
+        opacity: 0.26,
+        blending: THREE.AdditiveBlending
+      });
+      const lines = new THREE.LineSegments(lineGeo, lineMat);
+
+      group.add(lines);
+      group.add(pts);
+
+      group.layers.enable(BASE_LAYER);
+      group.layers.enable(BLOOM_LAYER);
+
+      scene.add(group);
+      return { group, pts, lines, phase: Math.random()*Math.PI*2 };
+    }
+
+    function createConstellations(){
+      // 巨蟹座（简化连接，背景左侧）
+      const cancerNodes = [
+        [-1.00,  0.20],
+        [-0.55,  0.42],
+        [-0.10,  0.26],
+        [ 0.20, -0.10],
+        [ 0.55, -0.35],
+        [ 0.95, -0.10]
+      ];
+      const cancerEdges = [[0,1],[1,2],[2,3],[3,4],[4,5]];
+      cancer = makeConstellation(cancerNodes, cancerEdges, -55);
+
+      // 处女座（简化连接，背景右侧）
+      const virgoNodes = [
+        [-0.95,  0.40],
+        [-0.55,  0.20],
+        [-0.10,  0.05],
+        [ 0.35,  0.15],
+        [ 0.65, -0.10],
+        [ 0.35, -0.40],
+        [-0.05, -0.55],
+        [ 0.95,  0.10]
+      ];
+      const virgoEdges = [[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[4,7]];
+      virgo = makeConstellation(virgoNodes, virgoEdges, +55);
+    }
+
+    function updateConstellations(t){
+      if (!cancer || !virgo) return;
+      const list = [cancer, virgo];
+      for (const c of list){
+        c.group.position.copy(camera.position);
+        c.group.quaternion.copy(camera.quaternion);
+
+        // 小幅闪烁/脉冲
+        const pulse = 0.78 + 0.18*Math.sin(t*1.15 + c.phase) + musicEnergy*0.14;
+        c.pts.material.opacity = clamp01(0.72 + pulse*0.25);
+        c.lines.material.opacity = clamp01(0.16 + pulse*0.14);
+
+        // 轻微漂移（像天空呼吸）
+        c.group.position.x += Math.sin(t*0.11 + c.phase)*0.55;
+        c.group.position.y += Math.sin(t*0.09 + c.phase)*0.35;
+      }
     }
 
     // ===== 流星雨 =====
@@ -1283,7 +1510,6 @@
       m.opacity = 0.0;
 
       m.dir.set(1.0, -0.32 - Math.random() * 0.12, 0.02).normalize();
-
       const ang = Math.atan2(m.dir.y, m.dir.x);
       m.mesh.rotation.z = ang;
     }
@@ -1363,14 +1589,12 @@
         const camPos = camera.position;
         const dx = m.mesh.position.x - camPos.x;
         const dy = m.mesh.position.y - camPos.y;
-        if (m.life <= 0 || dy < -95 || dx > 190) {
-          resetMeteor(m);
-        }
+        if (m.life <= 0 || dy < -95 || dx > 190) resetMeteor(m);
       }
     }
 
     function createFloor() {
-      const geo = new THREE.CircleGeometry(22, 64);
+      const geo = new THREE.CircleGeometry(FLOOR_R, 64);
       const mat = new THREE.MeshStandardMaterial({
         color: 0x050a18,
         metalness: 0.12,
@@ -1379,7 +1603,7 @@
       });
       const floor = new THREE.Mesh(geo, mat);
       floor.rotation.x = -Math.PI / 2;
-      floor.position.y = -14;
+      floor.position.y = FLOOR_Y;
       floor.layers.set(BASE_LAYER);
       scene.add(floor);
     }
@@ -1452,6 +1676,9 @@
       snowSystem.layers.enable(BASE_LAYER);
       snowSystem.layers.enable(BLOOM_LAYER);
       scene.add(snowSystem);
+
+      // ✅ 每个雪粒落地标记
+      snowHit = new Uint8Array(CONFIG.particles.snowCount);
     }
 
     function updateSnow() {
@@ -1467,13 +1694,28 @@
         const swaySpeed = userData[i * 2 + 1];
         positions[i * 3] += Math.sin(clock.elapsedTime * 2 + i) * swaySpeed * (0.10 + wind * 0.08);
 
+        // ✅ 落地堆积（只记录一次）
+        if (positions[i*3+1] < FLOOR_Y + 0.2 && snowHit && snowHit[i] === 0){
+          snowHit[i] = 1;
+          const x = positions[i*3+0];
+          const z = positions[i*3+2];
+          depositSnowAt(x, z, 0.8 + musicEnergy*0.6);
+        }
+
+        // 重新从天上落下
         if (positions[i * 3 + 1] < -34) {
           positions[i * 3 + 1] = 34;
           positions[i * 3] = THREE.MathUtils.randFloatSpread(110);
           positions[i * 3 + 2] = THREE.MathUtils.randFloatSpread(70);
+          if (snowHit) snowHit[i] = 0;
         }
       }
       snowSystem.geometry.attributes.position.needsUpdate = true;
+
+      // overlay 自身也可轻微“呼吸”
+      if (snowOverlayMesh){
+        snowOverlayMesh.material.opacity = 0.80 + 0.10*(0.5+0.5*Math.sin(clock.elapsedTime*0.55)) + musicEnergy*0.08;
+      }
     }
 
     class Particle {
@@ -1558,9 +1800,7 @@
           }
         }
 
-        if (mode === 'FOCUS' && this.mesh === focusTargetMesh) {
-          this.mesh.lookAt(camera.position);
-        }
+        if (mode === 'FOCUS' && this.mesh === focusTargetMesh) this.mesh.lookAt(camera.position);
 
         let s = this.baseScale;
         if (this.isDust) {
@@ -1649,6 +1889,12 @@
       MAT.iceMat = iceMat;
       MAT.silverMat = silverMat;
       MAT.auroraMat2 = auroraMat2;
+
+      // ✅ 轻微积雪（给“树枝/装饰”材质打补丁）
+      patchSnowMaterial(iceMat);
+      patchSnowMaterial(silverMat);
+      patchSnowMaterial(auroraMat2);
+      patchSnowMaterial(candyMat);
 
       for (let i = 0; i < CONFIG.particles.count; i++) {
         const rand = Math.random();
@@ -1770,6 +2016,7 @@
       });
 
       MAT.garlandMat = garlandMat;
+      patchSnowMaterial(garlandMat); // ✅ 灯带上也轻微积雪
 
       garland = new THREE.Mesh(tubeGeo, garlandMat);
       garland.layers.enable(BASE_LAYER);
@@ -1890,6 +2137,7 @@
         emissiveIntensity: 0.08
       });
       MAT.frameMat = frameMat;
+      patchSnowMaterial(frameMat); // ✅ 相框边缘也轻微积雪
 
       const frame = new THREE.Mesh(frameGeo, frameMat);
 
@@ -1924,6 +2172,9 @@
       photoMeshGroup.add(group);
       particleSystem.push(new Particle(group, 'PHOTO', false));
       updatePhotoLayout();
+
+      // ✅ 记录已加载照片纹理，用于“礼物盒喷出照片”
+      if (texture) LOADED_PHOTO_TEXTURES.push(texture);
     }
 
     function handleImageUpload(e) {
@@ -1973,7 +2224,7 @@
       }
     }
 
-    // ===== ✅ 星星飞出变文字：更清晰（黑描边 + 柔和渐变填充），且文字只在 BASE 层（无 Bloom）=====
+    // ===== ✅ 星星飞出变文字（保持你原逻辑）=====
     function makeLoveTextTexture(text){
       const c = document.createElement('canvas');
       c.width = 1600;
@@ -1982,14 +2233,12 @@
       const ctx = c.getContext('2d');
       ctx.clearRect(0,0,c.width,c.height);
 
-      // 轻微“底雾”但不发光炸白
       const haze = ctx.createRadialGradient(c.width/2, c.height/2, 10, c.width/2, c.height/2, c.width/2);
       haze.addColorStop(0, 'rgba(255,255,255,0.06)');
       haze.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = haze;
       ctx.fillRect(0,0,c.width,c.height);
 
-      // 字体设置：更厚、更稳
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.font = '700 92px "Cinzel", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
@@ -1999,18 +2248,15 @@
       const x = c.width/2;
       const y = c.height/2 + 2;
 
-      // 1) ✅ 先画黑色描边（清晰边缘，不炸白）
       ctx.shadowBlur = 0;
       ctx.lineWidth = 18;
       ctx.strokeStyle = 'rgba(0,0,0,0.86)';
       ctx.strokeText(text, x, y);
 
-      // 2) 再画一圈“冷白”细边做锐化（可选但很提升清晰度）
       ctx.lineWidth = 6;
       ctx.strokeStyle = 'rgba(230,250,255,0.22)';
       ctx.strokeText(text, x, y);
 
-      // 3) ✅ 柔和渐变填充（降低纯白比例，避免炸白）
       const grad = ctx.createLinearGradient(c.width*0.25, 0, c.width*0.75, 0);
       grad.addColorStop(0.00, 'rgba(245,250,255,0.95)');
       grad.addColorStop(0.35, 'rgba(210,240,255,0.93)');
@@ -2019,14 +2265,12 @@
       ctx.fillStyle = grad;
       ctx.fillText(text, x, y);
 
-      // 4) 微弱阴影（很小，不会糊）
       ctx.shadowColor = 'rgba(0,0,0,0.25)';
       ctx.shadowBlur = 6;
       ctx.shadowOffsetY = 2;
       ctx.fillStyle = 'rgba(255,255,255,0.05)';
       ctx.fillText(text, x, y);
 
-      // tiny spark dots（减少数量，避免“糊/噪点”）
       ctx.shadowBlur = 0;
       for (let i = 0; i < 60; i++) {
         const xx = x + (Math.random()-0.5)*980;
@@ -2084,10 +2328,7 @@
     }
 
     function createLoveTextAndHearts(){
-      // text sprite
       loveTextTex = makeLoveTextTexture("zyj和gky要永远在一起💖");
-
-      // ✅ 文字材质：用 NormalBlending（更清晰、不会炸白）
       loveTextMat = new THREE.SpriteMaterial({
         map: loveTextTex,
         transparent: true,
@@ -2100,14 +2341,10 @@
       loveTextSprite = new THREE.Sprite(loveTextMat);
       loveTextSprite.scale.set(18, 3.4, 1);
       loveTextSprite.visible = false;
-
-      // ✅ 关键：文字永远只在 BASE 层（无 Bloom）
       loveTextSprite.layers.set(BASE_LAYER);
       loveTextSprite.layers.disable(BLOOM_LAYER);
-
       mainGroup.add(loveTextSprite);
 
-      // heart pool
       heartTex = makeHeartTexture();
       const HEART_N = 46;
       for (let i = 0; i < HEART_N; i++) {
@@ -2236,10 +2473,7 @@
         topStarMesh.rotation.z += dt * (3.2 + musicEnergy*1.2);
         topStarMesh.rotation.y += dt * (1.6 + musicEnergy*0.9);
 
-        if (p >= 1) {
-          STAR_LOVE.phase = 1;
-          STAR_LOVE.t = 0;
-        }
+        if (p >= 1) { STAR_LOVE.phase = 1; STAR_LOVE.t = 0; }
       }
       else if (STAR_LOVE.phase === 1) {
         const p = clamp01(STAR_LOVE.t / STAR_LOVE.durMorphIn);
@@ -2255,10 +2489,7 @@
         if (loveTextSprite && loveTextMat) {
           loveTextSprite.visible = true;
           loveTextSprite.position.copy(topStarMesh.position);
-          // ✅ 亮度开关就在这里（按你要求）
-          const alpha = e;
-          loveTextMat.opacity = alpha * 0.85;
-
+          loveTextMat.opacity = e * 0.85;
           const s = 14.5 + e * 4.0;
           loveTextSprite.scale.set(s, (2.8 + e*0.6), 1);
         }
@@ -2272,7 +2503,6 @@
         if (p >= 1) {
           topStarMesh.visible = false;
           if (starMat) starMat.opacity = 0.0;
-
           STAR_LOVE.phase = 2;
           STAR_LOVE.t = 0;
         }
@@ -2284,8 +2514,6 @@
           loveTextSprite.position.copy(STAR_LOVE.flyPos);
           const pulse = 1.0 + 0.035 * Math.sin(t * 3.0);
           loveTextSprite.scale.set(18 * pulse, 3.4 * pulse, 1);
-
-          // ✅ 亮度开关就在这里（按你要求）
           const alpha = clamp01(0.92 + 0.08 * Math.sin(t*2.6));
           loveTextMat.opacity = alpha * 0.85;
         }
@@ -2296,20 +2524,14 @@
           spawnHearts(STAR_LOVE.flyPos.clone(), 1 + Math.floor(Math.random()*2));
         }
 
-        if (p >= 1) {
-          STAR_LOVE.phase = 3;
-          STAR_LOVE.t = 0;
-        }
+        if (p >= 1) { STAR_LOVE.phase = 3; STAR_LOVE.t = 0; }
       }
       else if (STAR_LOVE.phase === 3) {
         const p = clamp01(STAR_LOVE.t / STAR_LOVE.durFadeOut);
         const e = easeInOutCubic(p);
 
         if (loveTextSprite && loveTextMat) {
-          // ✅ 亮度开关就在这里（按你要求）
-          const alpha = (1.0 - e);
-          loveTextMat.opacity = alpha * 0.85;
-
+          loveTextMat.opacity = (1.0 - e) * 0.85;
           const s = 18 * (1.0 - 0.18*e);
           loveTextSprite.scale.set(s, 3.4*(1.0 - 0.18*e), 1);
         }
@@ -2349,6 +2571,355 @@
           STAR_LOVE.active = false;
           STAR_LOVE.phase = 0;
           STAR_LOVE.t = 0;
+        }
+      }
+    }
+
+    // ===== ✅ 新增：礼物盒 + 喷射系统 =====
+    function makeSparkTexture(){
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 64;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(32,32,0,32,32,32);
+      g.addColorStop(0,'rgba(255,255,255,1)');
+      g.addColorStop(0.25,'rgba(210,245,255,0.85)');
+      g.addColorStop(0.55,'rgba(170,220,255,0.20)');
+      g.addColorStop(1,'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(32,32,32,0,Math.PI*2); ctx.fill();
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    }
+
+    function createGiftBox(){
+      const g = new THREE.Group();
+      g.position.set(0, FLOOR_Y + 1.35, 0); // 地面上方
+      g.userData.isGiftBox = true;
+
+      const baseGeo = new THREE.BoxGeometry(4.0, 2.2, 4.0);
+      const lidGeo  = new THREE.BoxGeometry(4.2, 0.85, 4.2);
+
+      const baseMat = new THREE.MeshPhysicalMaterial({
+        color: 0x8bd3ff,
+        metalness: 0.35,
+        roughness: 0.22,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.10,
+        emissive: 0x1b3a66,
+        emissiveIntensity: 0.10
+      });
+      const ribbonMat = new THREE.MeshStandardMaterial({
+        color: 0xffa6c9,
+        metalness: 0.20,
+        roughness: 0.28,
+        emissive: 0x331021,
+        emissiveIntensity: 0.12
+      });
+
+      patchSnowMaterial(baseMat);
+      patchSnowMaterial(ribbonMat);
+
+      const base = new THREE.Mesh(baseGeo, baseMat);
+      base.position.y = 0;
+      base.layers.enable(BASE_LAYER);
+      base.layers.enable(BLOOM_LAYER);
+      g.add(base);
+
+      // lid pivot（后沿铰链）
+      giftLidPivot = new THREE.Group();
+      giftLidPivot.position.set(0, 2.2/2 + 0.85/2, -4.2/2 + 0.05);
+      g.add(giftLidPivot);
+
+      const lid = new THREE.Mesh(lidGeo, baseMat.clone());
+      patchSnowMaterial(lid.material);
+      lid.position.set(0, 0, 4.2/2 - 0.05);
+      lid.layers.enable(BASE_LAYER);
+      lid.layers.enable(BLOOM_LAYER);
+      giftLidPivot.add(lid);
+
+      // ribbons
+      const rib1 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 2.35, 4.05), ribbonMat);
+      rib1.position.set(0, 0, 0);
+      g.add(rib1);
+
+      const rib2 = new THREE.Mesh(new THREE.BoxGeometry(4.05, 2.35, 0.55), ribbonMat);
+      rib2.position.set(0, 0, 0);
+      g.add(rib2);
+
+      const ribTop1 = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.90, 4.25), ribbonMat);
+      ribTop1.position.set(0, 2.2/2 + 0.55, 0);
+      g.add(ribTop1);
+
+      const ribTop2 = new THREE.Mesh(new THREE.BoxGeometry(4.25, 0.90, 0.62), ribbonMat);
+      ribTop2.position.set(0, 2.2/2 + 0.55, 0);
+      g.add(ribTop2);
+
+      // subtle glow core (inside)
+      const glowGeo = new THREE.SphereGeometry(0.35, 16, 12);
+      const glowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent:true, opacity: 0.0 });
+      giftGlow = new THREE.Mesh(glowGeo, glowMat);
+      giftGlow.position.set(0, 0.8, 0);
+      giftGlow.layers.enable(BASE_LAYER);
+      giftGlow.layers.enable(BLOOM_LAYER);
+      g.add(giftGlow);
+
+      g.layers.enable(BASE_LAYER);
+      g.layers.enable(BLOOM_LAYER);
+      mainGroup.add(g);
+
+      giftGroup = g;
+    }
+
+    function createGiftParticles(){
+      sparkTex = makeSparkTexture();
+
+      // spark pool
+      const N = 160;
+      for (let i=0;i<N;i++){
+        const mat = new THREE.SpriteMaterial({
+          map: sparkTex,
+          transparent: true,
+          opacity: 0.0,
+          depthWrite: false,
+          depthTest: false,
+          blending: THREE.AdditiveBlending,
+          color: 0xeaf6ff
+        });
+        const sp = new THREE.Sprite(mat);
+        sp.visible = false;
+        sp.scale.set(0.7,0.7,1);
+        sp.layers.enable(BASE_LAYER);
+        sp.layers.enable(BLOOM_LAYER);
+        mainGroup.add(sp);
+
+        sparkPool.push({
+          sprite: sp,
+          alive:false,
+          life:0,
+          pos:new THREE.Vector3(),
+          vel:new THREE.Vector3(),
+          baseScale: 0.45 + Math.random()*0.75
+        });
+      }
+
+      // photo burst pool
+      const PN = 42;
+      for (let i=0;i<PN;i++){
+        const mat = new THREE.SpriteMaterial({
+          map: sparkTex, // 临时占位，触发时会换成照片纹理
+          transparent: true,
+          opacity: 0.0,
+          depthWrite: false,
+          depthTest: false,
+          blending: THREE.NormalBlending
+        });
+        const sp = new THREE.Sprite(mat);
+        sp.visible = false;
+        sp.scale.set(1.6, 1.2, 1);
+        sp.layers.enable(BASE_LAYER);
+        mainGroup.add(sp);
+
+        photoBurstPool.push({
+          sprite: sp,
+          alive:false,
+          life:0,
+          pos:new THREE.Vector3(),
+          vel:new THREE.Vector3(),
+          rot:0,
+          rotV:0,
+          baseScale: 0.9 + Math.random()*0.9
+        });
+      }
+    }
+
+    function spawnSparks(origin, count=26){
+      for (let k=0;k<count;k++){
+        const p = sparkPool.find(x=>!x.alive);
+        if (!p) return;
+        p.alive = true;
+        p.life = 0.85 + Math.random()*0.75;
+        p.pos.copy(origin).add(new THREE.Vector3((Math.random()-0.5)*0.35,(Math.random()-0.5)*0.25,(Math.random()-0.5)*0.35));
+        const dir = new THREE.Vector3(
+          (Math.random()-0.5)*1.1,
+          1.0 + Math.random()*1.35,
+          (Math.random()-0.5)*1.1
+        );
+        dir.normalize();
+        const spd = 7.5 + Math.random()*9.5;
+        p.vel.copy(dir).multiplyScalar(spd);
+
+        p.sprite.position.copy(p.pos);
+        p.sprite.scale.setScalar(p.baseScale);
+        p.sprite.material.opacity = 0.0;
+
+        // 颜色随 palette 微变化
+        const c = PALETTES[paletteIndex];
+        p.sprite.material.color.setHex(c.glow);
+
+        p.sprite.visible = true;
+      }
+    }
+
+    function spawnPhotoBurst(origin, count=10){
+      if (!LOADED_PHOTO_TEXTURES.length) return;
+      for (let k=0;k<count;k++){
+        const p = photoBurstPool.find(x=>!x.alive);
+        if (!p) return;
+
+        const tex = LOADED_PHOTO_TEXTURES[Math.floor(Math.random()*LOADED_PHOTO_TEXTURES.length)];
+        p.sprite.material.map = tex;
+        p.sprite.material.needsUpdate = true;
+
+        p.alive = true;
+        p.life = 1.2 + Math.random()*0.9;
+        p.pos.copy(origin).add(new THREE.Vector3((Math.random()-0.5)*0.4,(Math.random()-0.5)*0.2,(Math.random()-0.5)*0.4));
+
+        const dir = new THREE.Vector3(
+          (Math.random()-0.5)*1.2,
+          1.05 + Math.random()*1.1,
+          (Math.random()-0.5)*1.2
+        ).normalize();
+        const spd = 6.0 + Math.random()*7.0;
+        p.vel.copy(dir).multiplyScalar(spd);
+
+        p.rot = Math.random()*Math.PI*2;
+        p.rotV = (Math.random()-0.5)*4.0;
+
+        const s = p.baseScale*(0.9 + Math.random()*0.7);
+        p.sprite.scale.set(1.35*s, 1.0*s, 1);
+        p.sprite.material.opacity = 0.0;
+        p.sprite.material.rotation = p.rot;
+
+        p.sprite.position.copy(p.pos);
+        p.sprite.visible = true;
+      }
+    }
+
+    function updateGiftParticles(dt){
+      for (const p of sparkPool){
+        if (!p.alive) continue;
+        p.life -= dt;
+        const a = clamp01(p.life / 1.6);
+
+        p.vel.y -= 6.2 * dt;
+        p.vel.multiplyScalar(0.985);
+        p.pos.addScaledVector(p.vel, dt);
+        p.sprite.position.copy(p.pos);
+
+        const op = (1-a) * (0.85 + musicEnergy*0.15);
+        p.sprite.material.opacity = op;
+        const s = p.baseScale*(1.0 + (1-a)*0.75);
+        p.sprite.scale.set(s, s, 1);
+
+        if (p.life <= 0){
+          p.alive = false;
+          p.sprite.visible = false;
+          p.sprite.material.opacity = 0.0;
+        }
+      }
+
+      for (const p of photoBurstPool){
+        if (!p.alive) continue;
+        p.life -= dt;
+        const a = clamp01(p.life / 2.1);
+
+        p.vel.y -= 4.4 * dt;
+        p.vel.multiplyScalar(0.988);
+        p.pos.addScaledVector(p.vel, dt);
+        p.sprite.position.copy(p.pos);
+
+        p.rot += p.rotV * dt;
+        p.sprite.material.rotation = p.rot;
+
+        const op = (1-a) * 0.95;
+        p.sprite.material.opacity = op;
+
+        const s = (1.0 + (1-a)*0.45);
+        p.sprite.scale.multiplyScalar(1.0); // 保持比例
+        p.sprite.scale.set(p.sprite.scale.x*s, p.sprite.scale.y*s, 1);
+
+        if (p.life <= 0){
+          p.alive = false;
+          p.sprite.visible = false;
+          p.sprite.material.opacity = 0.0;
+        }
+      }
+    }
+
+    function triggerGift(){
+      if (!giftGroup || GIFT.active) return;
+
+      GIFT.active = true;
+      GIFT.phase = 0;
+      GIFT.t = 0;
+      giftGlow.material.opacity = 0.0;
+
+      showMsg("🎁 Gift opened!", 1200);
+    }
+
+    function updateGift(dt, t){
+      if (!giftGroup) return;
+
+      // idle glow hint
+      if (!GIFT.active){
+        const hint = 0.08 + 0.04*(0.5+0.5*Math.sin(t*1.2));
+        if (giftGlow) giftGlow.material.opacity = hint * (0.7 + musicEnergy*0.5);
+        return;
+      }
+
+      GIFT.t += dt;
+
+      if (GIFT.phase === 0){
+        const p = clamp01(GIFT.t / GIFT.durOpen);
+        const e = easeInOutCubic(p);
+
+        if (giftLidPivot) giftLidPivot.rotation.x = -1.35 * e;
+        if (giftGlow) giftGlow.material.opacity = (0.15 + 0.35*e) * (0.8 + musicEnergy*0.4);
+
+        if (p >= 1){
+          GIFT.phase = 1;
+          GIFT.t = 0;
+
+          const origin = giftGroup.localToWorld(new THREE.Vector3(0, 1.4, 0));
+          spawnSparks(origin, 42);
+          spawnPhotoBurst(origin, 14);
+        }
+      }
+      else if (GIFT.phase === 1){
+        const p = clamp01(GIFT.t / GIFT.durBurst);
+        if (p >= 1){
+          GIFT.phase = 2;
+          GIFT.t = 0;
+        }
+      }
+      else if (GIFT.phase === 2){
+        const p = clamp01(GIFT.t / GIFT.durHold);
+        if (giftGlow) giftGlow.material.opacity = (0.35 + 0.25*Math.sin(t*4.2)) * (0.85 + musicEnergy*0.35);
+
+        // 期间少量补喷
+        if (Math.random() < 0.06){
+          const origin = giftGroup.localToWorld(new THREE.Vector3(0, 1.35, 0));
+          spawnSparks(origin, 3);
+          if (Math.random() < 0.25) spawnPhotoBurst(origin, 1);
+        }
+
+        if (p >= 1){
+          GIFT.phase = 3;
+          GIFT.t = 0;
+        }
+      }
+      else if (GIFT.phase === 3){
+        const p = clamp01(GIFT.t / GIFT.durClose);
+        const e = easeInOutCubic(p);
+
+        if (giftLidPivot) giftLidPivot.rotation.x = -1.35 * (1.0 - e);
+        if (giftGlow) giftGlow.material.opacity = (0.18*(1.0 - e)) * (0.7 + musicEnergy*0.4);
+
+        if (p >= 1){
+          GIFT.active = false;
+          GIFT.phase = 0;
+          GIFT.t = 0;
         }
       }
     }
@@ -2480,7 +3051,7 @@
 
     function findAncestorFlag(obj, flagKey){
       let o = obj;
-      for (let i = 0; i < 8 && o; i++) {
+      for (let i = 0; i < 10 && o; i++) {
         if (o.userData && o.userData[flagKey]) return o;
         o = o.parent;
       }
@@ -2523,21 +3094,22 @@
 
         const intersects = raycaster.intersectObjects(mainGroup.children, true);
 
-        // ✅ 点击树顶星星：星星飞出变文字，再回来
+        // ✅ 点击树顶星星：飞出变文字
         for (let hit of intersects) {
           const starObj = findAncestorFlag(hit.object, 'isTopStar');
-          if (starObj) {
-            triggerStarLove();
-            return;
-          }
+          if (starObj) { triggerStarLove(); return; }
+        }
+
+        // ✅ 点击礼物盒：打开喷出照片/烟花
+        for (let hit of intersects) {
+          const giftObj = findAncestorFlag(hit.object, 'isGiftBox');
+          if (giftObj) { triggerGift(); return; }
         }
 
         let clickedParticle = null;
         for (let hit of intersects) {
           let obj = hit.object;
-          while (obj.parent && obj.parent !== mainGroup && obj.parent !== photoMeshGroup) {
-            obj = obj.parent;
-          }
+          while (obj.parent && obj.parent !== mainGroup && obj.parent !== photoMeshGroup) obj = obj.parent;
           const p = particleSystem.find(pp => pp.mesh === obj && pp.type === 'PHOTO');
           if (p) { clickedParticle = p; break; }
         }
@@ -2552,10 +3124,7 @@
             STATE.focusTarget = clickedParticle.mesh;
           }
         } else {
-          if (STATE.mode === 'FOCUS') {
-            STATE.mode = 'TREE';
-            STATE.focusTarget = null;
-          }
+          if (STATE.mode === 'FOCUS') { STATE.mode = 'TREE'; STATE.focusTarget = null; }
         }
       }, { passive: true });
     }
@@ -2594,6 +3163,7 @@
 
       updateAurora(t);
       updateStarfield(t);
+      updateConstellations(t);     // ✅ 星座
       updateMeteors(dt);
       updateFireflies(dt, t);
       updateGarlandBreath(t);
@@ -2602,8 +3172,12 @@
       updateStarLove(dt, t);
       updateHearts(dt);
 
+      updateGift(dt, t);           // ✅ 礼物盒动画
+      updateGiftParticles(dt);     // ✅ 礼物喷射
+      updateSnow();                // ✅ 雪落地堆积
+      updateSnowUniform();         // ✅ 树枝/装饰积雪材质
+
       particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
-      updateSnow();
 
       camera.layers.set(BLOOM_LAYER);
       bloomComposer.render();
