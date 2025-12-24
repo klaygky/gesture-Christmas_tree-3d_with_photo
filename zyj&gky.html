@@ -1347,9 +1347,9 @@
         const head = new THREE.Mesh(headGeo, headMat);
 
         mesh.layers.enable(BASE_LAYER);
-        mesh.layers.enable(BLOOM_LAYER);
+        mesh.layers.enable(BASE_LAYER);
         head.layers.enable(BASE_LAYER);
-        head.layers.enable(BLOOM_LAYER);
+        head.layers.enable(BASE_LAYER);
 
         meteorGroup.add(mesh);
         meteorGroup.add(head);
@@ -1479,7 +1479,7 @@
 
       snowSystem = new THREE.Points(geometry, material);
       snowSystem.layers.enable(BASE_LAYER);
-      snowSystem.layers.enable(BLOOM_LAYER);
+      snowSystem.layers.enable(BASE_LAYER);
       scene.add(snowSystem);
     }
 
@@ -1694,7 +1694,7 @@
         mesh.rotation.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
 
         mesh.layers.enable(BASE_LAYER);
-        if (type === 'AURORA') mesh.layers.enable(BLOOM_LAYER);
+        if (type === 'AURORA') mesh.layers.enable(BASE_LAYER);
 
         mainGroup.add(mesh);
         particleSystem.push(new Particle(mesh, type, false));
@@ -1735,7 +1735,7 @@
       const star = new THREE.Mesh(starGeo, starMat);
       star.position.set(0, CONFIG.particles.treeHeight / 2 + 1.25, 0);
       star.layers.enable(BASE_LAYER);
-      star.layers.enable(BLOOM_LAYER);
+      star.layers.enable(BASE_LAYER);
       star.userData.isTopStar = true;
       topStarMesh = star;
       mainGroup.add(star);
@@ -1743,7 +1743,7 @@
       flareLight = new THREE.PointLight(0xffffff, 1.0, 80);
       flareLight.position.copy(star.position).add(new THREE.Vector3(0, 0.6, 2.5));
       flareLight.layers.enable(BASE_LAYER);
-      flareLight.layers.enable(BLOOM_LAYER);
+      flareLight.layers.enable(BASE_LAYER);
       scene.add(flareLight);
 
       const flareTex = (() => {
@@ -1802,7 +1802,7 @@
 
       garland = new THREE.Mesh(tubeGeo, garlandMat);
       garland.layers.enable(BASE_LAYER);
-      garland.layers.enable(BLOOM_LAYER);
+      garland.layers.enable(BASE_LAYER);
       mainGroup.add(garland);
     }
     function updateGarlandBreath(t){
@@ -1860,7 +1860,7 @@
 
       fireflySystem = new THREE.Points(geo, mat);
       fireflySystem.layers.enable(BASE_LAYER);
-      fireflySystem.layers.enable(BLOOM_LAYER);
+      fireflySystem.layers.enable(BASE_LAYER);
       mainGroup.add(fireflySystem);
     }
     function updateFireflies(dt, t){
@@ -2141,7 +2141,7 @@
         hs.scale.set(0.9, 0.9, 1);
         hs.visible = false;
         hs.layers.enable(BASE_LAYER);
-        hs.layers.enable(BLOOM_LAYER);
+        hs.layers.enable(BASE_LAYER);
         mainGroup.add(hs);
 
         heartPool.push({
@@ -2385,8 +2385,8 @@
         clearcoat: 1.0,
         clearcoatRoughness: 0.12,
         envMapIntensity: 1.35,
-        emissive: 0x2a0b18,
-        emissiveIntensity: 0.10,
+        emissive: 0x0a0206,  
+        emissiveIntensity: 0.03,
         transparent: true,
         opacity: 1.0
       });
@@ -2398,8 +2398,8 @@
         clearcoat: 1.0,
         clearcoatRoughness: 0.10,
         envMapIntensity: 1.4,
-        emissive: 0xff6bb5,
-        emissiveIntensity: 0.22,
+        emissive: 0xff3f9a, 
+        emissiveIntensity: 0.08, 
         transparent: true,
         opacity: 1.0
       });
@@ -2420,7 +2420,7 @@
       giftBase = new THREE.Mesh(baseGeo, pinkMat);
       giftBase.position.set(0, 0.0, 0);
       giftBase.layers.enable(BASE_LAYER);
-      giftBase.layers.enable(BLOOM_LAYER);
+      giftBase.layers.enable(BASE_LAYER);
       giftBase.userData.isGift = true;
       giftGroup.add(giftBase);
 
@@ -2429,7 +2429,7 @@
       giftLid = new THREE.Mesh(lidGeo, pinkMat);
       giftLid.position.set(0, 1.8, 0);
       giftLid.layers.enable(BASE_LAYER);
-      giftLid.layers.enable(BLOOM_LAYER);
+      giftLid.layers.enable(BASE_LAYER);
       giftLid.userData.isGift = true;
       giftGroup.add(giftLid);
 
@@ -2438,18 +2438,18 @@
       const edge = new THREE.Mesh(edgeGeo, edgeMat);
       edge.position.set(0, 2.28, 0);
       edge.layers.enable(BASE_LAYER);
-      edge.layers.enable(BLOOM_LAYER);
+      edge.layers.enable(BASE_LAYER);
       giftGroup.add(edge);
 
       // ribbons (cross)
       const ribbon1 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 2.8, 3.62), ribbonMat);
       ribbon1.position.set(0, 0.10, 0);
-      ribbon1.layers.enable(BASE_LAYER); ribbon1.layers.enable(BLOOM_LAYER);
+      ribbon1.layers.enable(BASE_LAYER); ribbon1.layers.enable(BASE_LAYER);
       giftGroup.add(ribbon1);
 
       const ribbon2 = new THREE.Mesh(new THREE.BoxGeometry(3.62, 2.8, 0.55), ribbonMat);
       ribbon2.position.set(0, 0.10, 0);
-      ribbon2.layers.enable(BASE_LAYER); ribbon2.layers.enable(BLOOM_LAYER);
+      ribbon2.layers.enable(BASE_LAYER); ribbon2.layers.enable(BASE_LAYER);
       giftGroup.add(ribbon2);
 
       // bow (two torus knots)
@@ -2461,15 +2461,15 @@
       const bowL = new THREE.Mesh(bowGeo, ribbonMat);
       bowL.position.set(-0.38, 0.05, 0);
       bowL.rotation.set(0.2, 0.8, 0.4);
-      bowL.layers.enable(BASE_LAYER); bowL.layers.enable(BLOOM_LAYER);
+      bowL.layers.enable(BASE_LAYER); bowL.layers.enable(BASE_LAYER);
 
       const bowR = new THREE.Mesh(bowGeo, ribbonMat);
       bowR.position.set(0.38, 0.05, 0);
       bowR.rotation.set(-0.2, -0.8, -0.4);
-      bowR.layers.enable(BASE_LAYER); bowR.layers.enable(BLOOM_LAYER);
+      bowR.layers.enable(BASE_LAYER); bowR.layers.enable(BASE_LAYER);
 
       const knot = new THREE.Mesh(new THREE.SphereGeometry(0.24, 28, 28), ribbonMat);
-      knot.layers.enable(BASE_LAYER); knot.layers.enable(BLOOM_LAYER);
+      knot.layers.enable(BASE_LAYER); knot.layers.enable(BASE_LAYER);
 
       giftBow.add(bowL, bowR, knot);
 
@@ -2485,7 +2485,7 @@
       giftGlow.rotation.x = -Math.PI/2;
       giftGlow.position.set(0, -1.35, 0);
       giftGlow.layers.enable(BASE_LAYER);
-      giftGlow.layers.enable(BLOOM_LAYER);
+      giftGlow.layers.enable(BASE_LAYER);
       giftGroup.add(giftGlow);
 
       giftGroup.scale.setScalar(0.75);
