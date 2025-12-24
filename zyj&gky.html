@@ -139,6 +139,8 @@
       min-width: 220px;
       backdrop-filter: blur(10px);
       box-shadow: 0 18px 40px rgba(0,0,0,0.35);
+      line-height: 1.6;
+      letter-spacing: 1px;
     }
 
     #surprise-bar {
@@ -258,7 +260,6 @@
       background: rgba(0,0,0,0.18);
     }
 
-    /* ✅ 展示照片时更亮一点（只影响 viewer 里的照片） */
     #pv-img{
       object-fit: contain;
       transform-origin: center center;
@@ -266,7 +267,8 @@
       background: transparent;
       box-shadow: none;
       image-rendering: auto;
-      filter: brightness(1.10) contrast(1.03); /* ⭐ 亮一点点 */
+      /* 展示原图时稍微亮一些 */
+      filter: brightness(1.10) contrast(1.03) saturate(1.03);
     }
     .pv-fit #pv-img{
       max-width: 100%;
@@ -355,7 +357,7 @@
   </div>
   <div id="debug-info"></div>
 
-  <!-- 原图查看器：默认 1:1 -->
+  <!-- 原图查看器 -->
   <div id="photo-viewer" aria-hidden="true" class="pv-one">
     <div class="pv-backdrop" id="pv-backdrop"></div>
     <div class="pv-panel">
@@ -470,12 +472,14 @@
     }
 
     // ===== UI msg =====
-    function showMsg(txt) {
+    let msgTimer = null;
+    function showMsg(txt, ms = 2200) {
       const box = document.getElementById('msg-box');
       if (!box) return;
       box.innerText = txt;
       box.style.display = 'block';
-      setTimeout(() => { box.style.display = 'none'; }, 2200);
+      if (msgTimer) clearTimeout(msgTimer);
+      msgTimer = setTimeout(() => { box.style.display = 'none'; }, ms);
     }
 
     // ===== viewer scale =====
@@ -522,7 +526,12 @@
     pvModeOne?.addEventListener('click', () => setPVMode('ONE'));
     pvImg?.addEventListener('dblclick', () => setPVScale(pvScale === 1 ? 2 : 1));
 
-    // ===== palettes (index circle) =====
+    // ===== easing =====
+    const clamp01 = (x) => Math.max(0, Math.min(1, x));
+    const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
+    const easeInOutCubic = (x) => x < 0.5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3)/2;
+
+    // ===== palettes =====
     const PALETTES = [
       { name: "Arctic Ice",      main:0x8bd3ff, accent:0xb9a2ff, glow:0x3aa7ff, metal:0xe9f4ff, fog:0x050a18 },
       { name: "Aurora Violet",   main:0xb9a2ff, accent:0x6fd2ff, glow:0xa78bff, metal:0xf2ecff, fog:0x06061a },
@@ -545,7 +554,7 @@
         starMinR: 90,
         starMaxR: 260,
         fireflyCount: 260,
-        meteorCount: 18
+        meteorCount: 10
       },
       camera: { baseZ: 50 },
       render: { maxDPR: 3 },
@@ -563,16 +572,7 @@
       hand: { detected: false, x: 0, y: 0 },
       rotation: { x: 0, y: 0 },
       touch: { active: false, startX: 0, startY: 0, lastX: 0, lastY: 0 },
-      gesture: {
-        // index circle
-        trail: [],
-        circleHeld: false,
-        lastCircleAt: 0,
-        cooldownMs: 1200,
-        circleSpin: 0,
-        circleSpinTarget: 0
-      },
-      starAnim: { active:false, phase:0, t:0 }
+      gesture: { lastCircleAt: 0, cooldownMs: 1200, circleAcc: 0, lastAngle: null, buf: [], active: false }
     };
 
     // ===== THREE =====
@@ -592,7 +592,7 @@
     let mouse = new THREE.Vector2();
     let isCameraRunning = false;
 
-    // 星空/极光/萤火/灯带/流星
+    // 星空/极光/萤火/灯带
     let starSystem = null;
     let starColorAttr = null;
     let starBase = null;
@@ -609,18 +609,44 @@
     let garland = null;
     let garlandMat = null;
 
-    let meteorTex = null;
-    let meteors = []; // {sprite, vel, life, maxLife, active, rot, scale}
-
     // lens flare
     let flareLight = null;
 
-    // star + text
-    let topStar = null;
-    let topStarOrig = { pos:new THREE.Vector3(), rot:new THREE.Euler(), scale:new THREE.Vector3() };
-    let loveTextMesh = null;
-    let loveTextMat = null;
+    // 顶部星星 mesh
+    let topStarMesh = null;
+
+    // 流星
+    let meteorGroup = null;
+    let meteors = [];
+    let meteorTex = null;
+    let meteorHeadTex = null;
+
+    // ===== “星星飞出变文字”系统 =====
+    let loveTextSprite = null;
     let loveTextTex = null;
+
+    let heartPool = [];
+    let heartTex = null;
+
+    const STAR_LOVE = {
+      active: false,
+      phase: 0, // 0 fly, 1 morphIn, 2 hold, 3 fadeOut, 4 return
+      t: 0,
+      // durations (seconds)
+      durFly: 0.55,
+      durMorphIn: 0.32,
+      durHold: 2.20,
+      durFadeOut: 0.34,
+      durReturn: 0.55,
+      // saved transform (local space, since star is child of mainGroup)
+      origPos: new THREE.Vector3(),
+      origScale: new THREE.Vector3(),
+      origRot: new THREE.Euler(),
+      // targets
+      flyPos: new THREE.Vector3(),
+      // heart spawn
+      heartAcc: 0
+    };
 
     // ===== Materials & Lights =====
     const MAT = { iceMat:null, silverMat:null, auroraMat2:null, frameMat:null, garlandMat:null };
@@ -687,103 +713,91 @@
       if (LIGHTS.key)   LIGHTS.key.color.setHex(p.metal);
       if (LIGHTS.rim)   LIGHTS.rim.color.setHex(p.accent);
       if (LIGHTS.fill)  LIGHTS.fill.color.setHex(p.metal);
-
-      showMsg(`🌀 Palette: ${p.name}`);
     }
     function cyclePalette(){
       paletteIndex = (paletteIndex + 1) % PALETTES.length;
       applyPalette(PALETTES[paletteIndex]);
+      showMsg(`🌀 Palette: ${PALETTES[paletteIndex].name}`);
     }
 
-    // ===== Index finger circle detect =====
-    function isIndexOnlyUp(lm){
+    // ===== 食指转圈检测 =====
+    function isSingleIndexUp(lm){
       if (!lm || lm.length < 21) return false;
-
-      const wrist = lm[0];
       const indexTip = lm[8], indexPIP = lm[6], indexMCP = lm[5];
       const middleTip = lm[12], middlePIP = lm[10];
       const ringTip = lm[16], ringPIP = lm[14];
       const pinkyTip = lm[20], pinkyPIP = lm[18];
-      const thumbTip = lm[4], thumbIP = lm[3];
-
-      const indexUp = (indexTip.y < indexPIP.y) && (indexPIP.y < indexMCP.y) && (indexTip.y < wrist.y - 0.015);
+      const indexUp = (indexTip.y < indexPIP.y) && (indexPIP.y < indexMCP.y);
       const othersFolded =
         (middleTip.y > middlePIP.y) &&
         (ringTip.y   > ringPIP.y) &&
         (pinkyTip.y  > pinkyPIP.y);
-
-      // thumb relaxed (not extended sideways too hard)
-      const thumbOk = Math.hypot(thumbTip.x - thumbIP.x, thumbTip.y - thumbIP.y) < 0.25;
-
-      return indexUp && othersFolded && thumbOk;
+      return indexUp && othersFolded;
     }
-
-    function pushTrail(x,y,t){
-      const tr = STATE.gesture.trail;
-      tr.push({x,y,t});
-      const maxN = 26;
-      while (tr.length > maxN) tr.shift();
-      // also drop too old
-      const maxAge = 1400;
-      while (tr.length && (t - tr[0].t) > maxAge) tr.shift();
+    function normAngle(a){
+      while (a > Math.PI) a -= Math.PI * 2;
+      while (a < -Math.PI) a += Math.PI * 2;
+      return a;
     }
+    function processIndexCircle(lm){
+      const now = performance.now();
+      if (!isSingleIndexUp(lm)) {
+        STATE.gesture.active = false;
+        STATE.gesture.circleAcc = 0;
+        STATE.gesture.lastAngle = null;
+        STATE.gesture.buf.length = 0;
+        return;
+      }
+      const tip = lm[8];
+      const p = { x: tip.x, y: tip.y, t: now };
+      const buf = STATE.gesture.buf;
+      buf.push(p);
+      if (buf.length > 18) buf.shift();
+      if (buf.length < 10) { STATE.gesture.active = true; return; }
 
-    function detectCircleAndSpin(now){
-      const tr = STATE.gesture.trail;
-      if (tr.length < 12) return { ok:false, spin:0, completed:false };
-
-      // centroid
       let cx = 0, cy = 0;
-      for (const p of tr) { cx += p.x; cy += p.y; }
-      cx /= tr.length; cy /= tr.length;
+      for (const q of buf) { cx += q.x; cy += q.y; }
+      cx /= buf.length; cy /= buf.length;
 
-      // radii + angles
-      let radii = [];
-      let angs = [];
-      for (const p of tr) {
-        const dx = p.x - cx, dy = p.y - cy;
-        const r = Math.hypot(dx,dy);
-        radii.push(r);
-        angs.push(Math.atan2(dy, dx));
+      let rSum = 0, rMin = 1e9, rMax = 0;
+      for (const q of buf) {
+        const r = Math.hypot(q.x - cx, q.y - cy);
+        rSum += r;
+        rMin = Math.min(rMin, r);
+        rMax = Math.max(rMax, r);
+      }
+      const rMean = rSum / buf.length;
+
+      let path = 0;
+      for (let i = 1; i < buf.length; i++) {
+        path += Math.hypot(buf[i].x - buf[i-1].x, buf[i].y - buf[i-1].y);
       }
 
-      const rMean = radii.reduce((a,b)=>a+b,0) / radii.length;
-      if (rMean < 0.03) return { ok:false, spin:0, completed:false };
+      const radiusOk = (rMean > 0.03 && rMean < 0.18) && (rMax - rMin < 0.14);
+      const motionOk = path > 0.25;
 
-      let rVar = 0;
-      for (const r of radii) rVar += (r - rMean)*(r - rMean);
-      rVar /= radii.length;
-      const rStd = Math.sqrt(rVar);
+      const angle = Math.atan2(p.y - cy, p.x - cx);
 
-      // unwrap angle
-      let total = 0;
-      for (let i=1;i<angs.length;i++){
-        let d = angs[i] - angs[i-1];
-        while (d > Math.PI) d -= Math.PI*2;
-        while (d < -Math.PI) d += Math.PI*2;
-        total += d;
+      if (STATE.gesture.lastAngle !== null) {
+        const dAng = normAngle(angle - STATE.gesture.lastAngle);
+        if (radiusOk && motionOk) {
+          STATE.rotation.y += dAng * 1.35;
+          STATE.gesture.circleAcc += dAng;
+          STATE.gesture.active = true;
+        }
       }
+      STATE.gesture.lastAngle = angle;
 
-      const dt = (tr[tr.length-1].t - tr[0].t) / 1000;
-      if (dt < 0.35) return { ok:false, spin:0, completed:false };
-
-      // angular velocity (rad/s) based on last few
-      const last = Math.min(6, tr.length-1);
-      let local = 0, localDt = 0;
-      for (let i=tr.length-last;i<tr.length-1;i++){
-        let a0 = angs[i], a1 = angs[i+1];
-        let d = a1 - a0;
-        while (d > Math.PI) d -= Math.PI*2;
-        while (d < -Math.PI) d += Math.PI*2;
-        local += d;
-        localDt += (tr[i+1].t - tr[i].t)/1000;
+      if (STATE.gesture.active && Math.abs(STATE.gesture.circleAcc) > Math.PI * 2 * 0.85) {
+        if (now - STATE.gesture.lastCircleAt > STATE.gesture.cooldownMs) {
+          STATE.gesture.lastCircleAt = now;
+          STATE.gesture.circleAcc = 0;
+          STATE.gesture.lastAngle = null;
+          buf.length = 0;
+          cyclePalette();
+          showMsg("🌀 你转圈，我换色～", 1400);
+        }
       }
-      const spin = localDt > 0 ? (local / localDt) : 0;
-
-      const ok = (rStd / rMean) < 0.42 && Math.abs(spin) > 1.2;
-      const completed = ok && Math.abs(total) > (Math.PI * 1.7); // ~ 306°+
-
-      return { ok, spin, completed };
     }
 
     // ===== cinematic camera =====
@@ -825,6 +839,12 @@
         if (bloomPass) bloomPass.strength = 1.05 + musicEnergy * 0.25;
       }
 
+      // ⭐点击星星动画期间：轻微拉近更“演示感”
+      if (STAR_LOVE.active) {
+        CAM.fovTarget = 40;
+        if (bloomPass) bloomPass.strength = 1.25 + musicEnergy * 0.25; // 更亮一点
+      }
+
       expDampVec(CAM.pos, CAM.posTarget, CAM.smoothPos, dt);
       expDampVec(CAM.look, CAM.lookTarget, CAM.smoothLook, dt);
 
@@ -845,16 +865,17 @@
 
       createAuroraDome();
       createStarfield();
-      createMeteorSystem(); // ⭐ 流星
+      createMeteors();
 
       createTextures();
       createFloor();
-      createParticles();    // ⭐ 会创建 topStar
-      createLoveText();     // ⭐ 创建文字 mesh（默认隐藏）
+      createParticles();
       createGarland();
       createFireflies();
       createDust();
       createSnow();
+
+      createLoveTextAndHearts(); // ✅ 新增：星星飞出变文字+爱心
 
       loadPredefinedImages();
       setupPostProcessing();
@@ -1201,126 +1222,149 @@
       starSystem.material.opacity = 0.86 + musicEnergy * 0.08;
     }
 
-    // ===== 流星（明显可见、真实感尾巴） =====
-    function createMeteorTexture(){
+    // ===== 流星雨 =====
+    function makeMeteorTexture(){
       const c = document.createElement('canvas');
       c.width = 256; c.height = 64;
       const ctx = c.getContext('2d');
 
-      // tail gradient
-      const g = ctx.createLinearGradient(0, 32, 256, 32);
-      g.addColorStop(0.00, 'rgba(255,255,255,0.0)');
-      g.addColorStop(0.15, 'rgba(190,235,255,0.08)');
-      g.addColorStop(0.55, 'rgba(190,235,255,0.18)');
-      g.addColorStop(0.85, 'rgba(255,255,255,0.55)');
-      g.addColorStop(1.00, 'rgba(255,255,255,1.0)');
+      const grad = ctx.createLinearGradient(0, 0, 256, 0);
+      grad.addColorStop(0.00, 'rgba(255,255,255,0)');
+      grad.addColorStop(0.15, 'rgba(255,255,255,0.10)');
+      grad.addColorStop(0.45, 'rgba(210,245,255,0.65)');
+      grad.addColorStop(1.00, 'rgba(255,255,255,0.95)');
 
-      ctx.fillStyle = 'rgba(0,0,0,0)';
-      ctx.fillRect(0,0,256,64);
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, 256, 64);
 
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.ellipse(140, 32, 118, 10, 0, 0, Math.PI*2);
-      ctx.fill();
-
-      // bright head
-      const rg = ctx.createRadialGradient(232,32,0,232,32,18);
-      rg.addColorStop(0.0, 'rgba(255,255,255,1)');
-      rg.addColorStop(0.35,'rgba(255,255,255,0.7)');
-      rg.addColorStop(1.0, 'rgba(255,255,255,0)');
-      ctx.fillStyle = rg;
-      ctx.beginPath();
-      ctx.arc(232,32,18,0,Math.PI*2);
-      ctx.fill();
+      const v = ctx.createLinearGradient(0, 0, 0, 64);
+      v.addColorStop(0.00, 'rgba(255,255,255,0)');
+      v.addColorStop(0.30, 'rgba(255,255,255,0.55)');
+      v.addColorStop(0.50, 'rgba(255,255,255,0.95)');
+      v.addColorStop(0.70, 'rgba(255,255,255,0.55)');
+      v.addColorStop(1.00, 'rgba(255,255,255,0)');
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.fillStyle = v;
+      ctx.fillRect(0, 0, 256, 64);
+      ctx.globalCompositeOperation = 'source-over';
 
       const tex = new THREE.CanvasTexture(c);
       tex.colorSpace = THREE.SRGBColorSpace;
-      tex.needsUpdate = true;
       return tex;
     }
 
-    function spawnMeteor(m){
-      m.active = true;
-      m.life = 0;
-      m.maxLife = 0.9 + Math.random()*0.9;
-
-      // spawn in upper sky, far away
-      const r = 160 + Math.random()*120;
-      const theta = Math.random()*Math.PI*2;
-      const y = 60 + Math.random()*80;
-      m.sprite.position.set(Math.cos(theta)*r, y, Math.sin(theta)*r);
-
-      // direction: diagonal downwards
-      const dir = new THREE.Vector3(-1.0 + Math.random()*0.25, -0.45 - Math.random()*0.25, -0.25 + Math.random()*0.5).normalize();
-      const speed = 120 + Math.random()*120;
-      m.vel.copy(dir).multiplyScalar(speed);
-
-      // rotate sprite to match direction in screen-ish sense
-      const ang = Math.atan2(dir.y, dir.x);
-      m.sprite.material.rotation = ang;
-
-      const base = 14 + Math.random()*16;
-      m.scale.set(base*3.4, base, 1);
-      m.sprite.scale.copy(m.scale);
-
-      m.sprite.material.opacity = 0.0;
-      m.sprite.visible = true;
-
-      m.delay = 0;
+    function makeMeteorHeadTexture(){
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 64;
+      const ctx = c.getContext('2d');
+      const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      g.addColorStop(0.00, 'rgba(255,255,255,1)');
+      g.addColorStop(0.20, 'rgba(220,250,255,0.85)');
+      g.addColorStop(0.60, 'rgba(180,225,255,0.20)');
+      g.addColorStop(1.00, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(32, 32, 32, 0, Math.PI * 2); ctx.fill();
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
     }
 
-    function createMeteorSystem(){
-      meteorTex = createMeteorTexture();
-      const mat = new THREE.SpriteMaterial({
-        map: meteorTex,
-        transparent: true,
-        opacity: 0.0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-      });
+    function resetMeteor(m){
+      const camPos = camera.position;
+      const startX = camPos.x - 140 + Math.random() * 140;
+      const startY = camPos.y + 70 + Math.random() * 80;
+      const startZ = camPos.z - 210 - Math.random() * 180;
 
-      for (let i=0;i<CONFIG.particles.meteorCount;i++){
-        const spr = new THREE.Sprite(mat.clone());
-        spr.layers.set(BASE_LAYER);      // ✅ 默认只在 BASE（可清晰）
-        spr.layers.enable(BLOOM_LAYER);  // 轻微 bloom 更高级（但不会影响文字）
-        spr.visible = false;
-        scene.add(spr);
-        meteors.push({
-          sprite: spr,
-          vel: new THREE.Vector3(),
-          life: 0,
-          maxLife: 1,
-          active: false,
-          delay: Math.random()*3.5,
-          scale: new THREE.Vector3()
+      m.mesh.position.set(startX, startY, startZ);
+      m.head.position.set(startX + m.len * 0.5, startY - m.len * 0.18, startZ);
+
+      m.life = 1.0;
+      m.speed = 65 + Math.random() * 45;
+      m.opacity = 0.0;
+
+      m.dir.set(1.0, -0.32 - Math.random() * 0.12, 0.02).normalize();
+
+      const ang = Math.atan2(m.dir.y, m.dir.x);
+      m.mesh.rotation.z = ang;
+    }
+
+    function createMeteors(){
+      meteorGroup = new THREE.Group();
+      scene.add(meteorGroup);
+
+      meteorTex = makeMeteorTexture();
+      meteorHeadTex = makeMeteorHeadTexture();
+
+      const geo = new THREE.PlaneGeometry(16, 0.55);
+      const headGeo = new THREE.PlaneGeometry(1.0, 1.0);
+
+      for (let i = 0; i < CONFIG.particles.meteorCount; i++) {
+        const mat = new THREE.MeshBasicMaterial({
+          map: meteorTex,
+          transparent: true,
+          opacity: 0.0,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
         });
+        const mesh = new THREE.Mesh(geo, mat);
+
+        const headMat = new THREE.MeshBasicMaterial({
+          map: meteorHeadTex,
+          transparent: true,
+          opacity: 0.0,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending
+        });
+        const head = new THREE.Mesh(headGeo, headMat);
+
+        mesh.layers.enable(BASE_LAYER);
+        mesh.layers.enable(BLOOM_LAYER);
+        head.layers.enable(BASE_LAYER);
+        head.layers.enable(BLOOM_LAYER);
+
+        meteorGroup.add(mesh);
+        meteorGroup.add(head);
+
+        const m = {
+          mesh,
+          head,
+          dir: new THREE.Vector3(1, -0.35, 0).normalize(),
+          speed: 80,
+          life: 1,
+          opacity: 0,
+          len: 14 + Math.random() * 10
+        };
+        mesh.scale.set(m.len / 16, 1, 1);
+        resetMeteor(m);
+
+        m.mesh.position.x += Math.random() * 140;
+        m.mesh.position.y += Math.random() * 80;
+
+        meteors.push(m);
       }
     }
 
     function updateMeteors(dt){
-      for (const m of meteors){
-        if (!m.active){
-          m.delay -= dt;
-          if (m.delay <= 0) spawnMeteor(m);
-          continue;
-        }
-        m.life += dt;
-        m.sprite.position.addScaledVector(m.vel, dt);
+      if (!meteorGroup || meteors.length === 0) return;
 
-        // fade in/out
-        const aIn = Math.min(1, m.life / 0.15);
-        const aOut = Math.min(1, (m.maxLife - m.life) / 0.25);
-        const alpha = Math.max(0, Math.min(1, aIn * aOut));
-        m.sprite.material.opacity = alpha * 0.95;
+      for (const m of meteors) {
+        m.opacity = Math.min(1, m.opacity + dt * 2.8);
+        m.life -= dt * 0.45;
 
-        // slight stretch pulse
-        const pulse = 1.0 + 0.06*Math.sin(m.life*14);
-        m.sprite.scale.set(m.scale.x*pulse, m.scale.y, 1);
+        const v = m.speed * dt;
+        m.mesh.position.addScaledVector(m.dir, v);
+        m.head.position.copy(m.mesh.position).addScaledVector(m.dir, m.len * 0.52);
 
-        if (m.life >= m.maxLife){
-          m.active = false;
-          m.sprite.visible = false;
-          m.delay = 0.8 + Math.random()*3.2;
+        const fade = Math.max(0, Math.min(1, m.life));
+        const op = (0.15 + 0.85 * m.opacity) * fade;
+        m.mesh.material.opacity = op * (0.78 + musicEnergy * 0.22);
+        m.head.material.opacity = op * 0.95;
+
+        const camPos = camera.position;
+        const dx = m.mesh.position.x - camPos.x;
+        const dy = m.mesh.position.y - camPos.y;
+        if (m.life <= 0 || dy < -95 || dx > 190) {
+          resetMeteor(m);
         }
       }
     }
@@ -1649,28 +1693,27 @@
       });
       starGeo.center();
 
+      // ⭐ 注意：要做淡入淡出，需要 transparent + opacity
       const starMat = new THREE.MeshStandardMaterial({
         color: 0xffe3a0,
         emissive: 0xffd27a,
         emissiveIntensity: 0.9,
         metalness: 1.0,
-        roughness: 0.08
+        roughness: 0.08,
+        transparent: true,
+        opacity: 1.0
       });
 
-      topStar = new THREE.Mesh(starGeo, starMat);
-      topStar.name = "TOP_STAR";
-      topStar.userData.isTopStar = true;
-      topStar.position.set(0, CONFIG.particles.treeHeight / 2 + 1.25, 0);
-      topStar.layers.enable(BASE_LAYER);
-      topStar.layers.enable(BLOOM_LAYER);
-      mainGroup.add(topStar);
-
-      topStarOrig.pos.copy(topStar.position);
-      topStarOrig.rot.copy(topStar.rotation);
-      topStarOrig.scale.copy(topStar.scale);
+      const star = new THREE.Mesh(starGeo, starMat);
+      star.position.set(0, CONFIG.particles.treeHeight / 2 + 1.25, 0);
+      star.layers.enable(BASE_LAYER);
+      star.layers.enable(BLOOM_LAYER);
+      star.userData.isTopStar = true;
+      topStarMesh = star;
+      mainGroup.add(star);
 
       flareLight = new THREE.PointLight(0xffffff, 1.0, 80);
-      flareLight.position.copy(topStar.position).add(new THREE.Vector3(0, 0.6, 2.5));
+      flareLight.position.copy(star.position).add(new THREE.Vector3(0, 0.6, 2.5));
       flareLight.layers.enable(BASE_LAYER);
       flareLight.layers.enable(BLOOM_LAYER);
       scene.add(flareLight);
@@ -1931,58 +1974,99 @@
       }
     }
 
-    // ===== 爱心文字贴图（关键：保证“能看清字”） =====
+    // ===== ✅ 星星飞出变文字（漂浮+爱心粒子）=====
     function makeLoveTextTexture(text){
-      const W = 2048, H = 512;
       const c = document.createElement('canvas');
-      c.width = W; c.height = H;
+      c.width = 1400;
+      c.height = 260;
       const ctx = c.getContext('2d');
 
-      // background transparent
-      ctx.clearRect(0,0,W,H);
+      ctx.clearRect(0,0,c.width,c.height);
 
-      // font
+      // 背景微光
+      const bg = ctx.createRadialGradient(c.width/2, c.height/2, 10, c.width/2, c.height/2, c.width/2);
+      bg.addColorStop(0, 'rgba(255,255,255,0.12)');
+      bg.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0,0,c.width,c.height);
+
+      // 文字（发光 + 渐变）
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.font = `700 128px Cinzel, "Times New Roman", serif`;
 
-      const cx = W/2, cy = H/2;
+      // glow
+      ctx.font = '700 86px "Cinzel", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei"';
+      ctx.shadowColor = 'rgba(255,120,190,0.65)';
+      ctx.shadowBlur = 24;
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillText(text, c.width/2, c.height/2);
 
-      // ✅ 1) 暗色描边：让字在亮背景里也清晰
-      ctx.save();
+      // gradient main
       ctx.shadowBlur = 0;
-      ctx.lineJoin = "round";
-      ctx.miterLimit = 2;
-      ctx.lineWidth = 22;
-      ctx.strokeStyle = "rgba(0,0,0,0.58)";
-      ctx.strokeText(text, cx, cy);
-      ctx.restore();
+      const grad = ctx.createLinearGradient(c.width*0.25, 0, c.width*0.75, 0);
+      grad.addColorStop(0.00, 'rgba(255,255,255,0.98)');
+      grad.addColorStop(0.35, 'rgba(214,240,255,0.98)');
+      grad.addColorStop(0.70, 'rgba(255,166,201,0.98)');
+      grad.addColorStop(1.00, 'rgba(255,255,255,0.98)');
 
-      // ✅ 2) 发光降低（不要炸白）
-      ctx.save();
-      ctx.shadowColor = "rgba(255,120,190,0.22)";
-      ctx.shadowBlur  = 10; // 以前太大=糊
-      const grad = ctx.createLinearGradient(cx - 520, cy, cx + 520, cy);
-      grad.addColorStop(0.00, 'rgba(230,245,255,0.80)');
-      grad.addColorStop(0.35, 'rgba(214,240,255,0.78)');
-      grad.addColorStop(0.70, 'rgba(255,166,201,0.78)');
-      grad.addColorStop(1.00, 'rgba(230,245,255,0.80)');
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = 'rgba(120,190,255,0.25)';
+      ctx.strokeText(text, c.width/2, c.height/2);
+
       ctx.fillStyle = grad;
-      ctx.fillText(text, cx, cy);
-      ctx.restore();
+      ctx.fillText(text, c.width/2, c.height/2);
 
-      // subtle sparkle dots
-      ctx.save();
-      ctx.globalAlpha = 0.20;
-      for (let i=0;i<50;i++){
-        const x = cx + (Math.random()-0.5)*1200;
-        const y = cy + (Math.random()-0.5)*220;
-        const r = 1.2 + Math.random()*2.8;
+      // small spark dots
+      for (let i = 0; i < 120; i++) {
+        const x = (c.width/2) + (Math.random()-0.5)*900;
+        const y = (c.height/2) + (Math.random()-0.5)*160;
+        const a = Math.random()*Math.PI*2;
+        const r = 0.5 + Math.random()*1.8;
         ctx.fillStyle = `rgba(255,255,255,${0.15 + Math.random()*0.35})`;
         ctx.beginPath();
-        ctx.arc(x,y,r,0,Math.PI*2);
+        ctx.arc(x + Math.cos(a)*2, y + Math.sin(a)*2, r, 0, Math.PI*2);
         ctx.fill();
       }
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    function makeHeartTexture(){
+      const c = document.createElement('canvas');
+      c.width = 128; c.height = 128;
+      const ctx = c.getContext('2d');
+
+      ctx.clearRect(0,0,128,128);
+
+      // heart path
+      ctx.save();
+      ctx.translate(64, 70);
+      ctx.scale(1.05, 1.05);
+
+      ctx.beginPath();
+      ctx.moveTo(0, -10);
+      ctx.bezierCurveTo(30, -40, 70, -10, 0, 50);
+      ctx.bezierCurveTo(-70, -10, -30, -40, 0, -10);
+      ctx.closePath();
+
+      // glow + fill
+      const g = ctx.createRadialGradient(0, 10, 4, 0, 10, 70);
+      g.addColorStop(0.00, 'rgba(255,255,255,0.95)');
+      g.addColorStop(0.25, 'rgba(255,166,201,0.95)');
+      g.addColorStop(1.00, 'rgba(255,166,201,0.0)');
+      ctx.shadowColor = 'rgba(255,120,190,0.55)';
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = 'rgba(255,166,201,0.92)';
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = 'rgba(255,255,255,0.40)';
+      ctx.stroke();
+
       ctx.restore();
 
       const tex = new THREE.CanvasTexture(c);
@@ -1991,142 +2075,282 @@
       return tex;
     }
 
-    function createLoveText(){
+    function createLoveTextAndHearts(){
+      // text sprite
       loveTextTex = makeLoveTextTexture("zyj和gky要永远在一起💖");
-
-      const geo = new THREE.PlaneGeometry(26, 6.5);
-      loveTextMat = new THREE.MeshBasicMaterial({
+      const mat = new THREE.SpriteMaterial({
         map: loveTextTex,
         transparent: true,
         opacity: 0.0,
         depthWrite: false,
-        blending: THREE.NormalBlending
+        depthTest: false,
+        blending: THREE.AdditiveBlending
       });
-      loveTextMat.toneMapped = false;
+      loveTextSprite = new THREE.Sprite(mat);
+      loveTextSprite.scale.set(18, 3.4, 1); // 初始尺寸（会动画）
+      loveTextSprite.visible = false;
+      loveTextSprite.layers.enable(BASE_LAYER);
+      loveTextSprite.layers.enable(BLOOM_LAYER);
+      mainGroup.add(loveTextSprite);
 
-      loveTextMesh = new THREE.Mesh(geo, loveTextMat);
-      loveTextMesh.visible = false;
-      loveTextMesh.renderOrder = 999;
-      loveTextMesh.layers.set(BASE_LAYER);      // ✅ 文字永远不进 BLOOM，保证清晰
-      loveTextMesh.layers.disable(BLOOM_LAYER);
-      mainGroup.add(loveTextMesh);
+      // heart pool
+      heartTex = makeHeartTexture();
+      const HEART_N = 46;
+      for (let i = 0; i < HEART_N; i++) {
+        const hm = new THREE.SpriteMaterial({
+          map: heartTex,
+          transparent: true,
+          opacity: 0.0,
+          depthWrite: false,
+          depthTest: false,
+          blending: THREE.AdditiveBlending
+        });
+        const hs = new THREE.Sprite(hm);
+        hs.scale.set(0.9, 0.9, 1);
+        hs.visible = false;
+        hs.layers.enable(BASE_LAYER);
+        hs.layers.enable(BLOOM_LAYER);
+        mainGroup.add(hs);
+
+        heartPool.push({
+          sprite: hs,
+          alive: false,
+          life: 0,
+          pos: new THREE.Vector3(),
+          vel: new THREE.Vector3(),
+          baseScale: 0.7 + Math.random()*0.7
+        });
+      }
     }
 
-    function triggerStarText(){
-      if (!topStar || !loveTextMesh || STATE.starAnim.active) return;
-      if (pv.classList.contains('show')) return;
+    function spawnHearts(localPos, count = 6){
+      for (let k = 0; k < count; k++) {
+        const h = heartPool.find(x => !x.alive);
+        if (!h) return;
+        h.alive = true;
+        h.life = 0.85 + Math.random()*0.55;
+        h.pos.copy(localPos).add(new THREE.Vector3(
+          (Math.random()-0.5)*0.8,
+          (Math.random()-0.5)*0.5,
+          (Math.random()-0.5)*0.5
+        ));
+        h.vel.set(
+          (Math.random()-0.5)*1.2,
+          1.2 + Math.random()*1.3,
+          (Math.random()-0.5)*0.6
+        );
 
-      STATE.starAnim.active = true;
-      STATE.starAnim.phase = 0;
-      STATE.starAnim.t = 0;
-
-      // store orig (in case camera moved)
-      topStarOrig.pos.copy(topStar.position);
-      topStarOrig.rot.copy(topStar.rotation);
-      topStarOrig.scale.copy(topStar.scale);
-
-      // when anim starts, ensure star is visible
-      topStar.visible = true;
-      topStar.layers.enable(BLOOM_LAYER);
-      loveTextMesh.visible = false;
-      loveTextMat.opacity = 0.0;
-
-      
+        h.sprite.position.copy(h.pos);
+        h.sprite.scale.setScalar(h.baseScale);
+        h.sprite.material.opacity = 0.0;
+        h.sprite.visible = true;
+      }
     }
 
-    function updateStarTextAnim(dt){
-      if (!STATE.starAnim.active || !topStar || !loveTextMesh) return;
+    function updateHearts(dt){
+      for (const h of heartPool) {
+        if (!h.alive) continue;
+        h.life -= dt;
+        const a = clamp01(h.life / 1.2);
 
-      STATE.starAnim.t += dt;
+        // move
+        h.vel.y += 0.4 * dt; // 上升更明显
+        h.pos.addScaledVector(h.vel, dt);
+        h.sprite.position.copy(h.pos);
 
-      const flyDur = 0.65;
-      const textDur = 1.10;
-      const retDur = 0.70;
+        // fade & scale
+        const op = (1 - a) * 0.85;
+        h.sprite.material.opacity = op;
+        const s = h.baseScale * (1.0 + (1-a)*0.65);
+        h.sprite.scale.set(s, s, 1);
 
-      // target position in front of camera (world), then convert to mainGroup local
-      const dir = new THREE.Vector3();
-      camera.getWorldDirection(dir);
-      const worldTarget = camera.position.clone().add(dir.multiplyScalar(22));
-      const inv = new THREE.Matrix4().copy(mainGroup.matrixWorld).invert();
-      const localTarget = worldTarget.applyMatrix4(inv);
+        // rotate-ish: Sprite没有旋转轴，我们用 material.rotation
+        h.sprite.material.rotation += dt * (0.9 + Math.random()*0.2);
 
-      const easeOutCubic = (x)=> 1 - Math.pow(1-x,3);
-      const easeInOut = (x)=> x<0.5 ? 4*x*x*x : 1 - Math.pow(-2*x+2,3)/2;
-
-      // Phase 0: fly out
-      if (STATE.starAnim.phase === 0){
-        const u = Math.min(1, STATE.starAnim.t / flyDur);
-        const e = easeOutCubic(u);
-
-        topStar.position.lerpVectors(topStarOrig.pos, localTarget, e);
-        topStar.rotation.y += dt * (3.2 + musicEnergy*1.2);
-        topStar.rotation.x += dt * 1.6;
-
-        const s = 1.0 + 0.55*e;
-        topStar.scale.setScalar(s);
-
-        if (u >= 1){
-          // switch to text
-          STATE.starAnim.phase = 1;
-          STATE.starAnim.t = 0;
-
-          // hide star, show text at same spot
-          loveTextMesh.position.copy(topStar.position);
-          loveTextMesh.quaternion.copy(camera.quaternion); // face camera
-          loveTextMesh.visible = true;
-
-          // ✅ 关键：文字绝不进 BLOOM
-          topStar.layers.disable(BLOOM_LAYER);
+        if (h.life <= 0) {
+          h.alive = false;
+          h.sprite.visible = false;
+          h.sprite.material.opacity = 0.0;
         }
       }
-      // Phase 1: text show + fade
-      else if (STATE.starAnim.phase === 1){
-        const u = Math.min(1, STATE.starAnim.t / textDur);
-        const e = easeInOut(u);
+    }
 
-        loveTextMesh.quaternion.copy(camera.quaternion);
-        loveTextMesh.position.lerpVectors(localTarget, localTarget.clone().add(new THREE.Vector3(0, 0.6, 0)), e*0.35);
+    function triggerStarLove(){
+      if (!topStarMesh || STAR_LOVE.active) return;
 
-        // fade in then out
-        let alpha = 0;
-        if (u < 0.18) alpha = u/0.18;                 // in
-        else if (u > 0.82) alpha = (1-u)/0.18;        // out
-        else alpha = 1;
+      STAR_LOVE.active = true;
+      STAR_LOVE.phase = 0;
+      STAR_LOVE.t = 0;
+      STAR_LOVE.heartAcc = 0;
 
-        // ✅ 这里就是“字亮度”的总开关：0.85 更清晰不炸白
-        loveTextMat.opacity = alpha * 0.85;
+      // 保存星星原始 local transform
+      STAR_LOVE.origPos.copy(topStarMesh.position);
+      STAR_LOVE.origScale.copy(topStarMesh.scale);
+      STAR_LOVE.origRot.copy(topStarMesh.rotation);
 
-        // subtle scale breathe
-        const scale = 1.0 + 0.04*Math.sin(STATE.starAnim.t*5.2);
-        loveTextMesh.scale.set(scale, scale, 1);
+      // fly target（朝镜头方向 + 稍微上抛）
+      STAR_LOVE.flyPos.copy(STAR_LOVE.origPos).add(new THREE.Vector3(0, 1.6, 14));
 
-        // star is hidden during text
-        topStar.visible = false;
+      // 初始化文字 sprite
+      if (loveTextSprite) {
+        loveTextSprite.visible = false;
+        loveTextSprite.material.opacity = 0.0;
+        loveTextSprite.position.copy(STAR_LOVE.origPos);
+        loveTextSprite.scale.set(14.5, 2.8, 1);
+      }
 
-        if (u >= 1){
-          STATE.starAnim.phase = 2;
-          STATE.starAnim.t = 0;
-          loveTextMesh.visible = false;
-          loveTextMat.opacity = 0.0;
-          topStar.visible = true;
-          // keep star still out and return next phase
+      // 星星先确保可见
+      topStarMesh.visible = true;
+      if (topStarMesh.material) {
+        topStarMesh.material.opacity = 1.0;
+        topStarMesh.material.transparent = true;
+      }
+
+      // 立即喷一小点心作为“启动”
+      spawnHearts(STAR_LOVE.origPos.clone(), 5);
+    }
+
+    function updateStarLove(dt, t){
+      if (!STAR_LOVE.active || !topStarMesh) return;
+
+      STAR_LOVE.t += dt;
+
+      const starMat = topStarMesh.material;
+
+      // 文字漂浮（如果可见）
+      if (loveTextSprite && loveTextSprite.visible) {
+        const bob = Math.sin(t * 2.1) * 0.12;
+        loveTextSprite.position.y += bob * dt * 6; // dt修正
+      }
+
+      // phase machine
+      if (STAR_LOVE.phase === 0) {
+        // fly
+        const p = clamp01(STAR_LOVE.t / STAR_LOVE.durFly);
+        const e = easeOutCubic(p);
+
+        topStarMesh.position.lerpVectors(STAR_LOVE.origPos, STAR_LOVE.flyPos, e);
+        topStarMesh.scale.lerpVectors(STAR_LOVE.origScale, STAR_LOVE.origScale.clone().multiplyScalar(1.25), e);
+
+        topStarMesh.rotation.z += dt * (3.2 + musicEnergy*1.2);
+        topStarMesh.rotation.y += dt * (1.6 + musicEnergy*0.9);
+
+        if (p >= 1) {
+          STAR_LOVE.phase = 1;
+          STAR_LOVE.t = 0;
         }
       }
-      // Phase 2: return
-      else {
-        const u = Math.min(1, STATE.starAnim.t / retDur);
-        const e = easeInOut(u);
+      else if (STAR_LOVE.phase === 1) {
+        // morph in: star -> text
+        const p = clamp01(STAR_LOVE.t / STAR_LOVE.durMorphIn);
+        const e = easeInOutCubic(p);
 
-        topStar.position.lerpVectors(localTarget, topStarOrig.pos, e);
-        topStar.scale.lerpVectors(new THREE.Vector3(1.0,1.0,1.0), topStarOrig.scale, e);
+        // star fade out
+        if (starMat) starMat.opacity = 1.0 - e;
+        topStarMesh.scale.lerpVectors(
+          STAR_LOVE.origScale.clone().multiplyScalar(1.25),
+          STAR_LOVE.origScale.clone().multiplyScalar(0.70),
+          e
+        );
 
-        if (u >= 1){
+        // text fade in
+        if (loveTextSprite) {
+          loveTextSprite.visible = true;
+          loveTextSprite.position.copy(topStarMesh.position);
+          loveTextSprite.material.opacity = e;
+          const s = 14.5 + e * 4.0;
+          loveTextSprite.scale.set(s, (2.8 + e*0.6), 1);
+        }
+
+        // hearts burst
+        STAR_LOVE.heartAcc += dt;
+        if (STAR_LOVE.heartAcc > 0.08) {
+          STAR_LOVE.heartAcc = 0;
+          spawnHearts(topStarMesh.position.clone(), 2 + Math.floor(Math.random()*2));
+        }
+
+        if (p >= 1) {
+          // 隐藏星星（完全透明时）
+          topStarMesh.visible = false;
+          if (starMat) starMat.opacity = 0.0;
+
+          STAR_LOVE.phase = 2;
+          STAR_LOVE.t = 0;
+        }
+      }
+      else if (STAR_LOVE.phase === 2) {
+        // hold
+        const p = clamp01(STAR_LOVE.t / STAR_LOVE.durHold);
+
+        if (loveTextSprite) {
+          loveTextSprite.position.copy(STAR_LOVE.flyPos);
+          // 漂浮+微微放大缩小
+          const pulse = 1.0 + 0.035 * Math.sin(t * 3.0);
+          loveTextSprite.scale.set(18 * pulse, 3.4 * pulse, 1);
+          loveTextSprite.material.opacity = 0.92 + 0.08 * Math.sin(t*2.6);
+        }
+
+        // 持续“温柔”冒心
+        STAR_LOVE.heartAcc += dt;
+        if (STAR_LOVE.heartAcc > 0.12) {
+          STAR_LOVE.heartAcc = 0;
+          spawnHearts(STAR_LOVE.flyPos.clone(), 1 + Math.floor(Math.random()*2));
+        }
+
+        if (p >= 1) {
+          STAR_LOVE.phase = 3;
+          STAR_LOVE.t = 0;
+        }
+      }
+      else if (STAR_LOVE.phase === 3) {
+        // fade out text
+        const p = clamp01(STAR_LOVE.t / STAR_LOVE.durFadeOut);
+        const e = easeInOutCubic(p);
+
+        if (loveTextSprite) {
+          loveTextSprite.material.opacity = (1.0 - e) * 0.95;
+          const s = 18 * (1.0 - 0.18*e);
+          loveTextSprite.scale.set(s, 3.4*(1.0 - 0.18*e), 1);
+        }
+
+        if (p >= 1) {
+          if (loveTextSprite) {
+            loveTextSprite.visible = false;
+            loveTextSprite.material.opacity = 0.0;
+          }
+
+          // 让星星准备回归
+          topStarMesh.visible = true;
+          if (starMat) starMat.opacity = 0.0;
+          topStarMesh.position.copy(STAR_LOVE.flyPos);
+          topStarMesh.scale.copy(STAR_LOVE.origScale.clone().multiplyScalar(0.75));
+
+          STAR_LOVE.phase = 4;
+          STAR_LOVE.t = 0;
+        }
+      }
+      else if (STAR_LOVE.phase === 4) {
+        // return: star flies back
+        const p = clamp01(STAR_LOVE.t / STAR_LOVE.durReturn);
+        const e = easeInOutCubic(p);
+
+        topStarMesh.position.lerpVectors(STAR_LOVE.flyPos, STAR_LOVE.origPos, e);
+        topStarMesh.scale.lerpVectors(STAR_LOVE.origScale.clone().multiplyScalar(0.75), STAR_LOVE.origScale, e);
+        if (starMat) starMat.opacity = e;
+
+        topStarMesh.rotation.z += dt * 2.4;
+        topStarMesh.rotation.y += dt * 1.2;
+
+        if (p >= 1) {
           // restore
-          topStar.position.copy(topStarOrig.pos);
-          topStar.rotation.copy(topStarOrig.rot);
-          topStar.scale.copy(topStarOrig.scale);
-          topStar.layers.enable(BLOOM_LAYER);
-          STATE.starAnim.active = false;
+          topStarMesh.position.copy(STAR_LOVE.origPos);
+          topStarMesh.scale.copy(STAR_LOVE.origScale);
+          topStarMesh.rotation.copy(STAR_LOVE.origRot);
+          if (starMat) starMat.opacity = 1.0;
+
+          STAR_LOVE.active = false;
+          STAR_LOVE.phase = 0;
+          STAR_LOVE.t = 0;
         }
       }
     }
@@ -2162,7 +2386,7 @@
         camBtn.classList.add('active');
         isCameraRunning = true;
 
-        showMsg("摄像头已开启：食指画圈 🌀 换树色+转动");
+        showMsg("摄像头已开启：单食指🖐️转圈 → 换色 & 树跟着转");
       } catch (e) {
         console.warn("Camera error:", e);
         let msg = "Camera Error: " + e.name;
@@ -2190,41 +2414,40 @@
         STATE.hand.detected = true;
         const lm = result.landmarks[0];
 
-        // index-circle: rotate + palette
-        const indexOnly = isIndexOnlyUp(lm);
-        const now = performance.now();
+        processIndexCircle(lm);
 
-        if (indexOnly) {
-          // use index tip pos
-          const ix = lm[8].x - 0.5;
-          const iy = lm[8].y - 0.5;
-          pushTrail(ix, iy, now);
+        const wrist = lm[0];
+        const middleMCP = lm[9];
+        const handSize = Math.hypot(middleMCP.x - wrist.x, middleMCP.y - wrist.y);
+        if (handSize < 0.02) return;
 
-          const { ok, spin, completed } = detectCircleAndSpin(now);
-          if (ok) {
-            STATE.gesture.circleSpinTarget = spin; // rad/s, + or -
-            // trigger palette once per full circle
-            if (completed && (now - STATE.gesture.lastCircleAt > STATE.gesture.cooldownMs)) {
-              STATE.gesture.lastCircleAt = now;
-              cyclePalette();
-            }
-          } else {
-            STATE.gesture.circleSpinTarget = 0;
+        const tips = [lm[8], lm[12], lm[16], lm[20]];
+        let avgTipDist = 0;
+        tips.forEach(t => avgTipDist += Math.hypot(t.x - wrist.x, t.y - wrist.y));
+        avgTipDist /= 4;
+
+        const pinchDist = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+        const extensionRatio = avgTipDist / handSize;
+        const pinchRatio = pinchDist / handSize;
+
+        if (extensionRatio < 1.5) { STATE.mode = 'TREE'; STATE.focusTarget = null; }
+        else if (pinchRatio < 0.35) {
+          if (STATE.mode !== 'FOCUS') {
+            STATE.mode = 'FOCUS';
+            const photos = particleSystem.filter(p => p.type === 'PHOTO');
+            if (photos.length) STATE.focusTarget = photos[Math.floor(Math.random() * photos.length)].mesh;
           }
-        } else {
-          // decay
-          STATE.gesture.trail.length = 0;
-          STATE.gesture.circleSpinTarget = 0;
-        }
+        } else if (extensionRatio > 1.7) { STATE.mode = 'SCATTER'; STATE.focusTarget = null; }
 
-        // also keep hand follow for subtle rot (optional)
         STATE.hand.x = (lm[9].x - 0.5) * 2;
         STATE.hand.y = (lm[9].y - 0.5) * 2;
 
       } else {
         STATE.hand.detected = false;
-        STATE.gesture.trail.length = 0;
-        STATE.gesture.circleSpinTarget = 0;
+        STATE.gesture.active = false;
+        STATE.gesture.circleAcc = 0;
+        STATE.gesture.lastAngle = null;
+        STATE.gesture.buf.length = 0;
       }
     }
 
@@ -2255,6 +2478,15 @@
           await setMusic(!musicOn);
         });
       }
+    }
+
+    function findAncestorFlag(obj, flagKey){
+      let o = obj;
+      for (let i = 0; i < 8 && o; i++) {
+        if (o.userData && o.userData[flagKey]) return o;
+        o = o.parent;
+      }
+      return null;
     }
 
     function setupTouchAndClick() {
@@ -2293,17 +2525,15 @@
 
         const intersects = raycaster.intersectObjects(mainGroup.children, true);
 
-        // ⭐ 1) 先判断是否点到树顶星星（优先级最高）
+        // ✅ 点击树顶星星：星星飞出变文字，再回来
         for (let hit of intersects) {
-          let obj = hit.object;
-          while (obj.parent && obj.parent !== mainGroup) obj = obj.parent;
-          if (obj && obj.userData && obj.userData.isTopStar) {
-            triggerStarText();
+          const starObj = findAncestorFlag(hit.object, 'isTopStar');
+          if (starObj) {
+            triggerStarLove();
             return;
           }
         }
 
-        // 2) 再判断照片
         let clickedParticle = null;
         for (let hit of intersects) {
           let obj = hit.object;
@@ -2339,16 +2569,20 @@
 
       updateMusicEnergy();
 
-      // smooth circle spin
-      STATE.gesture.circleSpin += (STATE.gesture.circleSpinTarget - STATE.gesture.circleSpin) * (1 - Math.exp(-8*dt));
-
-      // ✅ 食指画圈时：树一起跟着转
-      if (Math.abs(STATE.gesture.circleSpin) > 0.6) {
-        STATE.rotation.y += STATE.gesture.circleSpin * dt * 0.55;
-      }
-
-      // idle rotate / touch
-      if (!STATE.touch.active && Math.abs(STATE.gesture.circleSpin) <= 0.6) {
+      if (STATE.hand.detected) {
+        if (!STATE.gesture.active) {
+          if (STATE.mode === 'SCATTER') {
+            const targetRotY = STATE.hand.x * Math.PI * 0.9;
+            const targetRotX = STATE.hand.y * Math.PI * 0.25;
+            STATE.rotation.y += (targetRotY - STATE.rotation.y) * 3.0 * dt;
+            STATE.rotation.x += (targetRotX - STATE.rotation.x) * 3.0 * dt;
+          } else {
+            STATE.rotation.y += 0.28 * dt;
+          }
+        } else {
+          STATE.rotation.x += (0 - STATE.rotation.x) * 2.8 * dt;
+        }
+      } else if (!STATE.touch.active) {
         if (STATE.mode === 'TREE') {
           STATE.rotation.y += 0.26 * dt;
           STATE.rotation.x += (0 - STATE.rotation.x) * 2.0 * dt;
@@ -2367,11 +2601,12 @@
       updateGarlandBreath(t);
       updateCinematicCamera(dt, t);
 
+      // ✅ 星星飞出变文字更新 + 心心更新
+      updateStarLove(dt, t);
+      updateHearts(dt);
+
       particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
       updateSnow();
-
-      // ⭐ star->text animation (ensures text readable)
-      updateStarTextAnim(dt);
 
       // Selective Bloom render
       camera.layers.set(BLOOM_LAYER);
