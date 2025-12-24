@@ -2477,7 +2477,7 @@
       const glowMat = new THREE.MeshBasicMaterial({
         color: 0xff6bb5,
         transparent: true,
-        opacity: 0.22,
+        opacity: 0.10, 
         depthWrite: false,
         blending: THREE.AdditiveBlending
       });
@@ -2501,7 +2501,7 @@
           o.material.opacity = alpha;
         }
       });
-      if (giftGlow?.material) giftGlow.material.opacity = 0.22 * alpha;
+      if (giftGlow?.material) giftGlow.material.opacity = 0.10 * alpha;
     }
 
     function triggerGiftOpen(){
