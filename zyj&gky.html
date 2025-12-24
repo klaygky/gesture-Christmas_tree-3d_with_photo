@@ -1996,9 +1996,9 @@
 
       // glow
       ctx.font = '700 86px "Cinzel", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei"';
-      ctx.shadowColor = 'rgba(255,120,190,0.65)';
-      ctx.shadowBlur = 24;
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.shadowColor = 'rgba(255,120,190,0.35)'; // 0.65 -> 0.35 更暗
+      ctx.shadowBlur = 10;                        // 24 -> 10 发光更弱更清晰
+      ctx.fillStyle = 'rgba(210,235,255,0.78)';   // 更柔和、不刺眼
       ctx.fillText(text, c.width/2, c.height/2);
 
       // gradient main
