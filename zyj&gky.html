@@ -624,7 +624,7 @@
     // ===== “星星飞出变文字”系统 =====
     let loveTextSprite = null;
     let loveTextTex = null;
-
+    let loveTextMat = null; // ✅ 文字材质：用它统一控制 opacity（亮度）
     let heartPool = [];
     let heartTex = null;
 
@@ -842,7 +842,7 @@
       // ⭐点击星星动画期间：轻微拉近更“演示感”
       if (STAR_LOVE.active) {
         CAM.fovTarget = 40;
-        if (bloomPass) bloomPass.strength = 1.25 + musicEnergy * 0.25; // 更亮一点
+        if (bloomPass) bloomPass.strength = 1.25 + musicEnergy * 0.25;
       }
 
       expDampVec(CAM.pos, CAM.posTarget, CAM.smoothPos, dt);
@@ -875,7 +875,7 @@
       createDust();
       createSnow();
 
-      createLoveTextAndHearts(); // ✅ 新增：星星飞出变文字+爱心
+      createLoveTextAndHearts(); // ✅ 星星飞出变文字+爱心
 
       loadPredefinedImages();
       setupPostProcessing();
@@ -1693,7 +1693,6 @@
       });
       starGeo.center();
 
-      // ⭐ 注意：要做淡入淡出，需要 transparent + opacity
       const starMat = new THREE.MeshStandardMaterial({
         color: 0xffe3a0,
         emissive: 0xffd27a,
@@ -1974,57 +1973,68 @@
       }
     }
 
-    // ===== ✅ 星星飞出变文字（漂浮+爱心粒子）=====
+    // ===== ✅ 星星飞出变文字：更清晰（黑描边 + 柔和渐变填充），且文字只在 BASE 层（无 Bloom）=====
     function makeLoveTextTexture(text){
       const c = document.createElement('canvas');
-      c.width = 1400;
-      c.height = 260;
-      const ctx = c.getContext('2d');
+      c.width = 1600;
+      c.height = 320;
 
+      const ctx = c.getContext('2d');
       ctx.clearRect(0,0,c.width,c.height);
 
-      // 背景微光
-      const bg = ctx.createRadialGradient(c.width/2, c.height/2, 10, c.width/2, c.height/2, c.width/2);
-      bg.addColorStop(0, 'rgba(255,255,255,0.12)');
-      bg.addColorStop(1, 'rgba(255,255,255,0)');
-      ctx.fillStyle = bg;
+      // 轻微“底雾”但不发光炸白
+      const haze = ctx.createRadialGradient(c.width/2, c.height/2, 10, c.width/2, c.height/2, c.width/2);
+      haze.addColorStop(0, 'rgba(255,255,255,0.06)');
+      haze.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = haze;
       ctx.fillRect(0,0,c.width,c.height);
 
-      // 文字（发光 + 渐变）
+      // 字体设置：更厚、更稳
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      ctx.font = '700 92px "Cinzel", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+      ctx.lineJoin = 'round';
+      ctx.miterLimit = 2;
 
-      // glow
-      ctx.font = '700 86px "Cinzel", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei"';
-      ctx.shadowColor = 'rgba(255,120,190,0.65)';
-      ctx.shadowBlur = 24;
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
-      ctx.fillText(text, c.width/2, c.height/2);
+      const x = c.width/2;
+      const y = c.height/2 + 2;
 
-      // gradient main
+      // 1) ✅ 先画黑色描边（清晰边缘，不炸白）
       ctx.shadowBlur = 0;
+      ctx.lineWidth = 18;
+      ctx.strokeStyle = 'rgba(0,0,0,0.86)';
+      ctx.strokeText(text, x, y);
+
+      // 2) 再画一圈“冷白”细边做锐化（可选但很提升清晰度）
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = 'rgba(230,250,255,0.22)';
+      ctx.strokeText(text, x, y);
+
+      // 3) ✅ 柔和渐变填充（降低纯白比例，避免炸白）
       const grad = ctx.createLinearGradient(c.width*0.25, 0, c.width*0.75, 0);
-      grad.addColorStop(0.00, 'rgba(255,255,255,0.98)');
-      grad.addColorStop(0.35, 'rgba(214,240,255,0.98)');
-      grad.addColorStop(0.70, 'rgba(255,166,201,0.98)');
-      grad.addColorStop(1.00, 'rgba(255,255,255,0.98)');
-
-      ctx.lineWidth = 8;
-      ctx.strokeStyle = 'rgba(120,190,255,0.25)';
-      ctx.strokeText(text, c.width/2, c.height/2);
-
+      grad.addColorStop(0.00, 'rgba(245,250,255,0.95)');
+      grad.addColorStop(0.35, 'rgba(210,240,255,0.93)');
+      grad.addColorStop(0.70, 'rgba(255,182,210,0.92)');
+      grad.addColorStop(1.00, 'rgba(245,250,255,0.95)');
       ctx.fillStyle = grad;
-      ctx.fillText(text, c.width/2, c.height/2);
+      ctx.fillText(text, x, y);
 
-      // small spark dots
-      for (let i = 0; i < 120; i++) {
-        const x = (c.width/2) + (Math.random()-0.5)*900;
-        const y = (c.height/2) + (Math.random()-0.5)*160;
-        const a = Math.random()*Math.PI*2;
-        const r = 0.5 + Math.random()*1.8;
-        ctx.fillStyle = `rgba(255,255,255,${0.15 + Math.random()*0.35})`;
+      // 4) 微弱阴影（很小，不会糊）
+      ctx.shadowColor = 'rgba(0,0,0,0.25)';
+      ctx.shadowBlur = 6;
+      ctx.shadowOffsetY = 2;
+      ctx.fillStyle = 'rgba(255,255,255,0.05)';
+      ctx.fillText(text, x, y);
+
+      // tiny spark dots（减少数量，避免“糊/噪点”）
+      ctx.shadowBlur = 0;
+      for (let i = 0; i < 60; i++) {
+        const xx = x + (Math.random()-0.5)*980;
+        const yy = y + (Math.random()-0.5)*180;
+        const r = 0.4 + Math.random()*1.4;
+        ctx.fillStyle = `rgba(255,255,255,${0.10 + Math.random()*0.18})`;
         ctx.beginPath();
-        ctx.arc(x + Math.cos(a)*2, y + Math.sin(a)*2, r, 0, Math.PI*2);
+        ctx.arc(xx, yy, r, 0, Math.PI*2);
         ctx.fill();
       }
 
@@ -2041,7 +2051,6 @@
 
       ctx.clearRect(0,0,128,128);
 
-      // heart path
       ctx.save();
       ctx.translate(64, 70);
       ctx.scale(1.05, 1.05);
@@ -2052,7 +2061,6 @@
       ctx.bezierCurveTo(-70, -10, -30, -40, 0, -10);
       ctx.closePath();
 
-      // glow + fill
       const g = ctx.createRadialGradient(0, 10, 4, 0, 10, 70);
       g.addColorStop(0.00, 'rgba(255,255,255,0.95)');
       g.addColorStop(0.25, 'rgba(255,166,201,0.95)');
@@ -2078,19 +2086,25 @@
     function createLoveTextAndHearts(){
       // text sprite
       loveTextTex = makeLoveTextTexture("zyj和gky要永远在一起💖");
-      const mat = new THREE.SpriteMaterial({
+
+      // ✅ 文字材质：用 NormalBlending（更清晰、不会炸白）
+      loveTextMat = new THREE.SpriteMaterial({
         map: loveTextTex,
         transparent: true,
         opacity: 0.0,
         depthWrite: false,
         depthTest: false,
-        blending: THREE.AdditiveBlending
+        blending: THREE.NormalBlending
       });
-      loveTextSprite = new THREE.Sprite(mat);
-      loveTextSprite.scale.set(18, 3.4, 1); // 初始尺寸（会动画）
+
+      loveTextSprite = new THREE.Sprite(loveTextMat);
+      loveTextSprite.scale.set(18, 3.4, 1);
       loveTextSprite.visible = false;
-      loveTextSprite.layers.enable(BASE_LAYER);
-      loveTextSprite.layers.enable(BLOOM_LAYER);
+
+      // ✅ 关键：文字永远只在 BASE 层（无 Bloom）
+      loveTextSprite.layers.set(BASE_LAYER);
+      loveTextSprite.layers.disable(BLOOM_LAYER);
+
       mainGroup.add(loveTextSprite);
 
       // heart pool
@@ -2153,18 +2167,14 @@
         h.life -= dt;
         const a = clamp01(h.life / 1.2);
 
-        // move
-        h.vel.y += 0.4 * dt; // 上升更明显
+        h.vel.y += 0.4 * dt;
         h.pos.addScaledVector(h.vel, dt);
         h.sprite.position.copy(h.pos);
 
-        // fade & scale
         const op = (1 - a) * 0.85;
         h.sprite.material.opacity = op;
         const s = h.baseScale * (1.0 + (1-a)*0.65);
         h.sprite.scale.set(s, s, 1);
-
-        // rotate-ish: Sprite没有旋转轴，我们用 material.rotation
         h.sprite.material.rotation += dt * (0.9 + Math.random()*0.2);
 
         if (h.life <= 0) {
@@ -2183,30 +2193,25 @@
       STAR_LOVE.t = 0;
       STAR_LOVE.heartAcc = 0;
 
-      // 保存星星原始 local transform
       STAR_LOVE.origPos.copy(topStarMesh.position);
       STAR_LOVE.origScale.copy(topStarMesh.scale);
       STAR_LOVE.origRot.copy(topStarMesh.rotation);
 
-      // fly target（朝镜头方向 + 稍微上抛）
       STAR_LOVE.flyPos.copy(STAR_LOVE.origPos).add(new THREE.Vector3(0, 1.6, 14));
 
-      // 初始化文字 sprite
-      if (loveTextSprite) {
+      if (loveTextSprite && loveTextMat) {
         loveTextSprite.visible = false;
-        loveTextSprite.material.opacity = 0.0;
+        loveTextMat.opacity = 0.0;
         loveTextSprite.position.copy(STAR_LOVE.origPos);
         loveTextSprite.scale.set(14.5, 2.8, 1);
       }
 
-      // 星星先确保可见
       topStarMesh.visible = true;
       if (topStarMesh.material) {
         topStarMesh.material.opacity = 1.0;
         topStarMesh.material.transparent = true;
       }
 
-      // 立即喷一小点心作为“启动”
       spawnHearts(STAR_LOVE.origPos.clone(), 5);
     }
 
@@ -2214,18 +2219,14 @@
       if (!STAR_LOVE.active || !topStarMesh) return;
 
       STAR_LOVE.t += dt;
-
       const starMat = topStarMesh.material;
 
-      // 文字漂浮（如果可见）
       if (loveTextSprite && loveTextSprite.visible) {
         const bob = Math.sin(t * 2.1) * 0.12;
-        loveTextSprite.position.y += bob * dt * 6; // dt修正
+        loveTextSprite.position.y += bob * dt * 6;
       }
 
-      // phase machine
       if (STAR_LOVE.phase === 0) {
-        // fly
         const p = clamp01(STAR_LOVE.t / STAR_LOVE.durFly);
         const e = easeOutCubic(p);
 
@@ -2241,11 +2242,9 @@
         }
       }
       else if (STAR_LOVE.phase === 1) {
-        // morph in: star -> text
         const p = clamp01(STAR_LOVE.t / STAR_LOVE.durMorphIn);
         const e = easeInOutCubic(p);
 
-        // star fade out
         if (starMat) starMat.opacity = 1.0 - e;
         topStarMesh.scale.lerpVectors(
           STAR_LOVE.origScale.clone().multiplyScalar(1.25),
@@ -2253,16 +2252,17 @@
           e
         );
 
-        // text fade in
-        if (loveTextSprite) {
+        if (loveTextSprite && loveTextMat) {
           loveTextSprite.visible = true;
           loveTextSprite.position.copy(topStarMesh.position);
-          loveTextSprite.material.opacity = e;
+          // ✅ 亮度开关就在这里（按你要求）
+          const alpha = e;
+          loveTextMat.opacity = alpha * 0.85;
+
           const s = 14.5 + e * 4.0;
           loveTextSprite.scale.set(s, (2.8 + e*0.6), 1);
         }
 
-        // hearts burst
         STAR_LOVE.heartAcc += dt;
         if (STAR_LOVE.heartAcc > 0.08) {
           STAR_LOVE.heartAcc = 0;
@@ -2270,7 +2270,6 @@
         }
 
         if (p >= 1) {
-          // 隐藏星星（完全透明时）
           topStarMesh.visible = false;
           if (starMat) starMat.opacity = 0.0;
 
@@ -2279,18 +2278,18 @@
         }
       }
       else if (STAR_LOVE.phase === 2) {
-        // hold
         const p = clamp01(STAR_LOVE.t / STAR_LOVE.durHold);
 
-        if (loveTextSprite) {
+        if (loveTextSprite && loveTextMat) {
           loveTextSprite.position.copy(STAR_LOVE.flyPos);
-          // 漂浮+微微放大缩小
           const pulse = 1.0 + 0.035 * Math.sin(t * 3.0);
           loveTextSprite.scale.set(18 * pulse, 3.4 * pulse, 1);
-          loveTextSprite.material.opacity = 0.92 + 0.08 * Math.sin(t*2.6);
+
+          // ✅ 亮度开关就在这里（按你要求）
+          const alpha = clamp01(0.92 + 0.08 * Math.sin(t*2.6));
+          loveTextMat.opacity = alpha * 0.85;
         }
 
-        // 持续“温柔”冒心
         STAR_LOVE.heartAcc += dt;
         if (STAR_LOVE.heartAcc > 0.12) {
           STAR_LOVE.heartAcc = 0;
@@ -2303,23 +2302,24 @@
         }
       }
       else if (STAR_LOVE.phase === 3) {
-        // fade out text
         const p = clamp01(STAR_LOVE.t / STAR_LOVE.durFadeOut);
         const e = easeInOutCubic(p);
 
-        if (loveTextSprite) {
-          loveTextSprite.material.opacity = (1.0 - e) * 0.95;
+        if (loveTextSprite && loveTextMat) {
+          // ✅ 亮度开关就在这里（按你要求）
+          const alpha = (1.0 - e);
+          loveTextMat.opacity = alpha * 0.85;
+
           const s = 18 * (1.0 - 0.18*e);
           loveTextSprite.scale.set(s, 3.4*(1.0 - 0.18*e), 1);
         }
 
         if (p >= 1) {
-          if (loveTextSprite) {
+          if (loveTextSprite && loveTextMat) {
             loveTextSprite.visible = false;
-            loveTextSprite.material.opacity = 0.0;
+            loveTextMat.opacity = 0.0;
           }
 
-          // 让星星准备回归
           topStarMesh.visible = true;
           if (starMat) starMat.opacity = 0.0;
           topStarMesh.position.copy(STAR_LOVE.flyPos);
@@ -2330,7 +2330,6 @@
         }
       }
       else if (STAR_LOVE.phase === 4) {
-        // return: star flies back
         const p = clamp01(STAR_LOVE.t / STAR_LOVE.durReturn);
         const e = easeInOutCubic(p);
 
@@ -2342,7 +2341,6 @@
         topStarMesh.rotation.y += dt * 1.2;
 
         if (p >= 1) {
-          // restore
           topStarMesh.position.copy(STAR_LOVE.origPos);
           topStarMesh.scale.copy(STAR_LOVE.origScale);
           topStarMesh.rotation.copy(STAR_LOVE.origRot);
@@ -2601,14 +2599,12 @@
       updateGarlandBreath(t);
       updateCinematicCamera(dt, t);
 
-      // ✅ 星星飞出变文字更新 + 心心更新
       updateStarLove(dt, t);
       updateHearts(dt);
 
       particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
       updateSnow();
 
-      // Selective Bloom render
       camera.layers.set(BLOOM_LAYER);
       bloomComposer.render();
 
