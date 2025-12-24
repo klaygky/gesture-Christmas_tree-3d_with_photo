@@ -1,3 +1,10 @@
+<!--
+  - @Project: Grand Luxury Tree - Christmas Edition (Cloud Image Support)
+  - @Author: wp/electronicminer (Modified for Cloud Support)
+  - @Date: 2025-12-07
+  - @Description: 3D Christmas tree with customizable Cloud Image loading.
+  - 如需使用或分发，请务必保留此作者声明。
+-->
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -176,10 +183,11 @@
       box-shadow: 0 18px 40px rgba(0,0,0,0.35), 0 0 26px rgba(140, 210, 255, 0.16);
     }
 
-    #webcam-wrapper, #debug-info { display: none !important; }
+    #webcam-wrapper,
+    #debug-info { display: none !important; }
     input[type="file"] { display: none; }
 
-    /* ===== 原图查看器（提亮）===== */
+    /* ===== 原图查看器 ===== */
     #photo-viewer{
       position: fixed;
       inset: 0;
@@ -235,6 +243,7 @@
       font-size: 12px;
       letter-spacing: 1px;
     }
+
     .pv-imgwrap{
       flex: 1;
       display:flex;
@@ -250,6 +259,7 @@
       -webkit-overflow-scrolling: touch;
       background: rgba(0,0,0,0.18);
     }
+
     #pv-img{
       object-fit: contain;
       transform-origin: center center;
@@ -257,11 +267,17 @@
       background: transparent;
       box-shadow: none;
       image-rendering: auto;
-      /* ✅ 你要的：照片展示时稍微亮一点 */
+      /* 展示原图时稍微亮一些 */
       filter: brightness(1.10) contrast(1.03) saturate(1.03);
     }
-    .pv-fit #pv-img{ max-width: 100%; max-height: 74vh; }
-    .pv-one #pv-img{ max-width: none; max-height: none; }
+    .pv-fit #pv-img{
+      max-width: 100%;
+      max-height: 74vh;
+    }
+    .pv-one #pv-img{
+      max-width: none;
+      max-height: none;
+    }
 
     .pv-controls{
       display:flex;
@@ -297,52 +313,6 @@
     }
 
     body.pv-open #canvas-container{ pointer-events:none; }
-
-    /* ===== ✅ 新增：爱心粒子画布（在最顶层）===== */
-    #heart-canvas{
-      position: fixed;
-      inset: 0;
-      z-index: 999;
-      pointer-events: none;
-      display: none;
-    }
-
-    /* ===== ✅ 新增：星星点击的漂浮文字（高级动画）===== */
-    #love-overlay{
-      position: fixed;
-      inset: 0;
-      z-index: 998;
-      pointer-events: none;
-      display: none;
-      align-items: center;
-      justify-content: center;
-    }
-    .love-text{
-      padding: 14px 18px;
-      border-radius: 16px;
-      background: rgba(10,18,35,0.62);
-      border: 1px solid rgba(210,233,255,0.28);
-      backdrop-filter: blur(12px);
-      box-shadow: 0 22px 58px rgba(0,0,0,0.45), 0 0 30px rgba(255,170,210,0.10);
-      color: rgba(240, 252, 255, 0.96);
-      font-size: clamp(18px, 4.2vw, 32px);
-      letter-spacing: 1px;
-      text-align: center;
-      text-shadow: 0 0 18px rgba(255, 170, 210, 0.22), 0 0 28px rgba(160, 220, 255, 0.12);
-      transform: translateY(12px) scale(0.98);
-      opacity: 0;
-      animation: lovePop 0.45s ease-out forwards, loveFloat 2.6s ease-in-out 0.45s forwards;
-    }
-
-    @keyframes lovePop{
-      0%{ opacity:0; transform: translateY(18px) scale(0.92); filter: blur(2px); }
-      100%{ opacity:1; transform: translateY(0px) scale(1.00); filter: blur(0px); }
-    }
-    @keyframes loveFloat{
-      0%{ opacity:1; transform: translateY(0px) scale(1.00); }
-      70%{ opacity:1; transform: translateY(-26px) scale(1.01); }
-      100%{ opacity:0; transform: translateY(-42px) scale(1.02); }
-    }
   </style>
 
   <style>
@@ -411,17 +381,12 @@
     </div>
   </div>
 
-  <!-- ✅ 新增：爱心粒子 & 漂浮文字 -->
-  <canvas id="heart-canvas"></canvas>
-  <div id="love-overlay"><div class="love-text" id="love-text"></div></div>
-
   <script type="module">
     import * as THREE from 'three';
     import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-    import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
     import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     import { Lensflare, LensflareElement } from 'three/addons/objects/Lensflare.js';
     import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
@@ -447,12 +412,6 @@
     const pvModeOne = document.getElementById('pv-mode-1to1');
     const pvImgwrap = document.getElementById('pv-imgwrap');
     const pvTitle = pv.querySelector('.pv-title');
-
-    // ✅ 爱心 + 漂浮文字 dom
-    const loveOverlay = document.getElementById('love-overlay');
-    const loveTextEl = document.getElementById('love-text');
-    const heartCanvas = document.getElementById('heart-canvas');
-    const heartCtx = heartCanvas.getContext('2d', { alpha: true });
 
     // ===== Music analyser =====
     let musicOn = false;
@@ -523,127 +482,15 @@
       msgTimer = setTimeout(() => { box.style.display = 'none'; }, ms);
     }
 
-    // ===== ✅ 爱心粒子（2D 叠加）=====
-    let hearts = [];
-    let heartRAF = null;
-    let heartUntil = 0;
-
-    function resizeHeartCanvas(){
-      heartCanvas.width = Math.floor(window.innerWidth * (window.devicePixelRatio || 1));
-      heartCanvas.height = Math.floor(window.innerHeight * (window.devicePixelRatio || 1));
-      heartCanvas.style.width = window.innerWidth + 'px';
-      heartCanvas.style.height = window.innerHeight + 'px';
-      heartCtx.setTransform((window.devicePixelRatio || 1), 0, 0, (window.devicePixelRatio || 1), 0, 0);
-    }
-
-    function drawHeart(ctx, x, y, size, rot, alpha){
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(rot);
-      ctx.globalAlpha = alpha;
-
-      // 轻微渐变，让心更“高级”
-      const g = ctx.createRadialGradient(0, -size*0.2, 0, 0, 0, size*1.2);
-      g.addColorStop(0, 'rgba(255,255,255,0.95)');
-      g.addColorStop(0.35, 'rgba(255,170,210,0.88)');
-      g.addColorStop(1, 'rgba(140,210,255,0.20)');
-      ctx.fillStyle = g;
-
-      ctx.beginPath();
-      const s = size;
-      ctx.moveTo(0, s*0.25);
-      ctx.bezierCurveTo(s*0.55, -s*0.35, s*1.1, s*0.35, 0, s*1.1);
-      ctx.bezierCurveTo(-s*1.1, s*0.35, -s*0.55, -s*0.35, 0, s*0.25);
-      ctx.closePath();
-      ctx.fill();
-
-      // 高光
-      ctx.globalAlpha = alpha * 0.35;
-      ctx.fillStyle = 'rgba(255,255,255,0.65)';
-      ctx.beginPath();
-      ctx.ellipse(-s*0.18, -s*0.02, s*0.18, s*0.14, -0.3, 0, Math.PI*2);
-      ctx.fill();
-
-      ctx.restore();
-    }
-
-    function spawnHeartsBurst(text){
-      // 漂浮文字
-      loveTextEl.textContent = text;
-      loveOverlay.style.display = 'flex';
-
-      // 重新触发 CSS 动画（强制重绘）
-      loveTextEl.classList.remove('love-text');
-      void loveTextEl.offsetWidth;
-      loveTextEl.classList.add('love-text');
-
-      // 爱心画布
-      resizeHeartCanvas();
-      heartCanvas.style.display = 'block';
-
-      // 生成粒子（中心向上喷）
-      hearts.length = 0;
-      const cx = window.innerWidth * 0.5;
-      const cy = window.innerHeight * 0.52;
-
-      const count = 46;
-      for (let i = 0; i < count; i++){
-        const a = (-Math.PI/2) + (Math.random()-0.5) * 1.2;
-        const sp = 2.2 + Math.random() * 3.0;
-        hearts.push({
-          x: cx + (Math.random()-0.5) * 26,
-          y: cy + (Math.random()-0.5) * 14,
-          vx: Math.cos(a) * sp * (0.65 + Math.random()*0.5),
-          vy: Math.sin(a) * sp * (0.75 + Math.random()*0.6),
-          g: 0.03 + Math.random()*0.03,
-          size: 7 + Math.random()*11,
-          rot: (Math.random()-0.5) * 0.8,
-          vr: (Math.random()-0.5) * 0.03,
-          alpha: 1,
-          life: 1
-        });
-      }
-
-      const now = performance.now();
-      heartUntil = now + 2600;
-
-      if (heartRAF) cancelAnimationFrame(heartRAF);
-      const step = () => {
-        const t = performance.now();
-        heartCtx.clearRect(0,0,window.innerWidth,window.innerHeight);
-
-        for (const h of hearts){
-          h.vy += h.g;
-          h.x += h.vx;
-          h.y += h.vy;
-          h.rot += h.vr;
-
-          h.life -= 0.012;
-          h.alpha = Math.max(0, Math.min(1, h.life));
-
-          drawHeart(heartCtx, h.x, h.y, h.size, h.rot, h.alpha * 0.95);
-        }
-
-        // 结束条件
-        if (t < heartUntil){
-          heartRAF = requestAnimationFrame(step);
-        } else {
-          heartCanvas.style.display = 'none';
-          loveOverlay.style.display = 'none';
-          hearts.length = 0;
-          heartRAF = null;
-        }
-      };
-      heartRAF = requestAnimationFrame(step);
-    }
-
     // ===== viewer scale =====
     let pvScale = 1;
+    let pvMode = 'ONE';
     function setPVScale(s){
       pvScale = Math.max(1, Math.min(6, s));
       pvImg.style.transform = `scale(${pvScale})`;
     }
     function setPVMode(mode){
+      pvMode = mode;
       const isFit = (mode === 'FIT');
       pv.classList.toggle('pv-fit', isFit);
       pv.classList.toggle('pv-one', !isFit);
@@ -678,6 +525,11 @@
     pvModeFit?.addEventListener('click', () => setPVMode('FIT'));
     pvModeOne?.addEventListener('click', () => setPVMode('ONE'));
     pvImg?.addEventListener('dblclick', () => setPVScale(pvScale === 1 ? 2 : 1));
+
+    // ===== easing =====
+    const clamp01 = (x) => Math.max(0, Math.min(1, x));
+    const easeOutCubic = (x) => 1 - Math.pow(1 - x, 3);
+    const easeInOutCubic = (x) => x < 0.5 ? 4*x*x*x : 1 - Math.pow(-2*x + 2, 3)/2;
 
     // ===== palettes =====
     const PALETTES = [
@@ -720,14 +572,7 @@
       hand: { detected: false, x: 0, y: 0 },
       rotation: { x: 0, y: 0 },
       touch: { active: false, startX: 0, startY: 0, lastX: 0, lastY: 0 },
-      gesture: {
-        lastCircleAt: 0,
-        cooldownMs: 1200,
-        circleAcc: 0,
-        lastAngle: null,
-        buf: [],
-        active: false
-      }
+      gesture: { lastCircleAt: 0, cooldownMs: 1200, circleAcc: 0, lastAngle: null, buf: [], active: false }
     };
 
     // ===== THREE =====
@@ -735,8 +580,6 @@
     let bloomComposer, finalComposer;
     let bloomPass = null;
     let vignettePass = null;
-    let afterimagePass = null;   // ✅ 拖影
-    let meteorFlash = 0;         // ✅ 爆闪强度（0~1）
 
     let mainGroup;
     let clock = new THREE.Clock();
@@ -769,19 +612,47 @@
     // lens flare
     let flareLight = null;
 
-    // 顶部星星 Mesh
+    // 顶部星星 mesh
     let topStarMesh = null;
 
-    // 流星系统
+    // 流星
     let meteorGroup = null;
     let meteors = [];
     let meteorTex = null;
     let meteorHeadTex = null;
 
+    // ===== “星星飞出变文字”系统 =====
+    let loveTextSprite = null;
+    let loveTextTex = null;
+
+    let heartPool = [];
+    let heartTex = null;
+
+    const STAR_LOVE = {
+      active: false,
+      phase: 0, // 0 fly, 1 morphIn, 2 hold, 3 fadeOut, 4 return
+      t: 0,
+      // durations (seconds)
+      durFly: 0.55,
+      durMorphIn: 0.32,
+      durHold: 2.20,
+      durFadeOut: 0.34,
+      durReturn: 0.55,
+      // saved transform (local space, since star is child of mainGroup)
+      origPos: new THREE.Vector3(),
+      origScale: new THREE.Vector3(),
+      origRot: new THREE.Euler(),
+      // targets
+      flyPos: new THREE.Vector3(),
+      // heart spawn
+      heartAcc: 0
+    };
+
     // ===== Materials & Lights =====
     const MAT = { iceMat:null, silverMat:null, auroraMat2:null, frameMat:null, garlandMat:null };
     const LIGHTS = { ambient:null, inner:null, key:null, rim:null, fill:null };
 
+    // ===== helpers =====
     function computeDPR(){
       let dpr = Math.min(window.devicePixelRatio || 1, CONFIG.render.maxDPR);
       const mp = (window.innerWidth * window.innerHeight * dpr * dpr) / 1e6;
@@ -842,29 +713,25 @@
       if (LIGHTS.key)   LIGHTS.key.color.setHex(p.metal);
       if (LIGHTS.rim)   LIGHTS.rim.color.setHex(p.accent);
       if (LIGHTS.fill)  LIGHTS.fill.color.setHex(p.metal);
-
-      showMsg(`🌀 Palette: ${p.name}`);
     }
     function cyclePalette(){
       paletteIndex = (paletteIndex + 1) % PALETTES.length;
       applyPalette(PALETTES[paletteIndex]);
+      showMsg(`🌀 Palette: ${PALETTES[paletteIndex].name}`);
     }
 
     // ===== 食指转圈检测 =====
     function isSingleIndexUp(lm){
       if (!lm || lm.length < 21) return false;
-
       const indexTip = lm[8], indexPIP = lm[6], indexMCP = lm[5];
       const middleTip = lm[12], middlePIP = lm[10];
       const ringTip = lm[16], ringPIP = lm[14];
       const pinkyTip = lm[20], pinkyPIP = lm[18];
-
       const indexUp = (indexTip.y < indexPIP.y) && (indexPIP.y < indexMCP.y);
       const othersFolded =
         (middleTip.y > middlePIP.y) &&
         (ringTip.y   > ringPIP.y) &&
         (pinkyTip.y  > pinkyPIP.y);
-
       return indexUp && othersFolded;
     }
     function normAngle(a){
@@ -872,10 +739,8 @@
       while (a < -Math.PI) a += Math.PI * 2;
       return a;
     }
-
     function processIndexCircle(lm){
       const now = performance.now();
-
       if (!isSingleIndexUp(lm)) {
         STATE.gesture.active = false;
         STATE.gesture.circleAcc = 0;
@@ -883,13 +748,11 @@
         STATE.gesture.buf.length = 0;
         return;
       }
-
       const tip = lm[8];
       const p = { x: tip.x, y: tip.y, t: now };
       const buf = STATE.gesture.buf;
       buf.push(p);
       if (buf.length > 18) buf.shift();
-
       if (buf.length < 10) { STATE.gesture.active = true; return; }
 
       let cx = 0, cy = 0;
@@ -906,7 +769,9 @@
       const rMean = rSum / buf.length;
 
       let path = 0;
-      for (let i = 1; i < buf.length; i++) path += Math.hypot(buf[i].x - buf[i-1].x, buf[i].y - buf[i-1].y);
+      for (let i = 1; i < buf.length; i++) {
+        path += Math.hypot(buf[i].x - buf[i-1].x, buf[i].y - buf[i-1].y);
+      }
 
       const radiusOk = (rMean > 0.03 && rMean < 0.18) && (rMax - rMin < 0.14);
       const motionOk = path > 0.25;
@@ -960,7 +825,7 @@
         const orbit = 0.75 * Math.sin(t * 0.6);
         CAM.posTarget.set(orbit, CAM.lookTarget.y + 0.45, CAM.lookTarget.z - 12.5);
         CAM.fovTarget = 38;
-        if (bloomPass) bloomPass.strength = 0.95 + musicEnergy * 0.10 + meteorFlash * 0.25;
+        if (bloomPass) bloomPass.strength = 0.95 + musicEnergy * 0.10;
       } else {
         CAM.lookTarget.set(0, 0.5, 0);
         const baseZ = CONFIG.camera.baseZ;
@@ -971,7 +836,13 @@
 
         CAM.posTarget.set(driftX, 2.0 + driftY, baseZ + modeBoost + dolly);
         CAM.fovTarget = 42;
-        if (bloomPass) bloomPass.strength = 1.05 + musicEnergy * 0.25 + meteorFlash * 0.35;
+        if (bloomPass) bloomPass.strength = 1.05 + musicEnergy * 0.25;
+      }
+
+      // ⭐点击星星动画期间：轻微拉近更“演示感”
+      if (STAR_LOVE.active) {
+        CAM.fovTarget = 40;
+        if (bloomPass) bloomPass.strength = 1.25 + musicEnergy * 0.25; // 更亮一点
       }
 
       expDampVec(CAM.pos, CAM.posTarget, CAM.smoothPos, dt);
@@ -983,7 +854,7 @@
       camera.fov = expDampNum(camera.fov, CAM.fovTarget, CAM.smoothFov, dt);
       camera.updateProjectionMatrix();
 
-      if (flareLight) flareLight.intensity = 1.0 + musicEnergy * 0.25 + meteorFlash * 0.30;
+      if (flareLight) flareLight.intensity = 1.0 + musicEnergy * 0.25;
     }
 
     // ===== init =====
@@ -1004,14 +875,14 @@
       createDust();
       createSnow();
 
+      createLoveTextAndHearts(); // ✅ 新增：星星飞出变文字+爱心
+
       loadPredefinedImages();
       setupPostProcessing();
       setupEvents();
       setupTouchAndClick();
 
       applyPalette(PALETTES[paletteIndex]);
-
-      resizeHeartCanvas();
 
       const loader = document.getElementById('loader');
       loader.style.opacity = 0;
@@ -1079,7 +950,7 @@
       LIGHTS.fill = fill;
     }
 
-    // ===== Selective Bloom + ✅ Afterimage =====
+    // ===== Selective Bloom =====
     function setupPostProcessing() {
       const dpr = computeDPR();
 
@@ -1151,14 +1022,9 @@
       };
       vignettePass = new ShaderPass(VignetteShader);
 
-      // ✅ Afterimage（尾迹拖影），数值会在 animate() 动态调节
-      afterimagePass = new AfterimagePass();
-      afterimagePass.uniforms.damp.value = 0.90; // 默认轻微
-
       finalComposer = new EffectComposer(renderer);
       finalComposer.addPass(renderBase);
       finalComposer.addPass(finalPass);
-      finalComposer.addPass(afterimagePass);
       finalComposer.addPass(vignettePass);
 
       renderer.setPixelRatio(dpr);
@@ -1356,7 +1222,7 @@
       starSystem.material.opacity = 0.86 + musicEnergy * 0.08;
     }
 
-    // ===== ✅ 流星雨（爆闪 + 拖影）=====
+    // ===== 流星雨 =====
     function makeMeteorTexture(){
       const c = document.createElement('canvas');
       c.width = 256; c.height = 64;
@@ -1405,7 +1271,6 @@
 
     function resetMeteor(m){
       const camPos = camera.position;
-
       const startX = camPos.x - 140 + Math.random() * 140;
       const startY = camPos.y + 70 + Math.random() * 80;
       const startZ = camPos.z - 210 - Math.random() * 180;
@@ -1421,14 +1286,6 @@
 
       const ang = Math.atan2(m.dir.y, m.dir.x);
       m.mesh.rotation.z = ang;
-
-      // ✅ 随机爆闪：重生时有概率触发强闪一下
-      if (Math.random() < 0.55) {
-        m.flash = 1.0;
-        meteorFlash = Math.max(meteorFlash, 0.85);
-      } else {
-        m.flash = 0.0;
-      }
     }
 
     function createMeteors(){
@@ -1475,8 +1332,7 @@
           speed: 80,
           life: 1,
           opacity: 0,
-          len: 14 + Math.random() * 10,
-          flash: 0
+          len: 14 + Math.random() * 10
         };
         mesh.scale.set(m.len / 16, 1, 1);
         resetMeteor(m);
@@ -1495,26 +1351,21 @@
         m.opacity = Math.min(1, m.opacity + dt * 2.8);
         m.life -= dt * 0.45;
 
-        // 爆闪衰减
-        m.flash = Math.max(0, m.flash - dt * 2.2);
-
         const v = m.speed * dt;
         m.mesh.position.addScaledVector(m.dir, v);
         m.head.position.copy(m.mesh.position).addScaledVector(m.dir, m.len * 0.52);
 
         const fade = Math.max(0, Math.min(1, m.life));
-        const baseOp = (0.15 + 0.85 * m.opacity) * fade;
-
-        // ✅ 爆闪会让头更亮
-        const flashBoost = 1.0 + m.flash * 1.4;
-
-        m.mesh.material.opacity = baseOp * (0.78 + musicEnergy * 0.22) * flashBoost;
-        m.head.material.opacity = baseOp * 0.95 * flashBoost;
+        const op = (0.15 + 0.85 * m.opacity) * fade;
+        m.mesh.material.opacity = op * (0.78 + musicEnergy * 0.22);
+        m.head.material.opacity = op * 0.95;
 
         const camPos = camera.position;
         const dx = m.mesh.position.x - camPos.x;
         const dy = m.mesh.position.y - camPos.y;
-        if (m.life <= 0 || dy < -95 || dx > 190) resetMeteor(m);
+        if (m.life <= 0 || dy < -95 || dx > 190) {
+          resetMeteor(m);
+        }
       }
     }
 
@@ -1684,7 +1535,9 @@
             const desiredWorldPos = new THREE.Vector3(0, 2, 35);
             const invMatrix = new THREE.Matrix4().copy(mainGroup.matrixWorld).invert();
             target = desiredWorldPos.applyMatrix4(invMatrix);
-          } else target = this.posScatter;
+          } else {
+            target = this.posScatter;
+          }
         }
 
         const lerpSpeed = (mode === 'FOCUS' && this.mesh === focusTargetMesh) ? 5.0 : 2.0;
@@ -1705,7 +1558,9 @@
           }
         }
 
-        if (mode === 'FOCUS' && this.mesh === focusTargetMesh) this.mesh.lookAt(camera.position);
+        if (mode === 'FOCUS' && this.mesh === focusTargetMesh) {
+          this.mesh.lookAt(camera.position);
+        }
 
         let s = this.baseScale;
         if (this.isDust) {
@@ -1838,12 +1693,15 @@
       });
       starGeo.center();
 
+      // ⭐ 注意：要做淡入淡出，需要 transparent + opacity
       const starMat = new THREE.MeshStandardMaterial({
         color: 0xffe3a0,
         emissive: 0xffd27a,
         emissiveIntensity: 0.9,
         metalness: 1.0,
-        roughness: 0.08
+        roughness: 0.08,
+        transparent: true,
+        opacity: 1.0
       });
 
       const star = new THREE.Mesh(starGeo, starMat);
@@ -1922,7 +1780,7 @@
     function updateGarlandBreath(t){
       if (!garlandMat) return;
       const breath = 0.16 + 0.08 * (0.5 + 0.5 * Math.sin(t*1.2));
-      garlandMat.emissiveIntensity = breath + musicEnergy * 0.22 + meteorFlash * 0.12;
+      garlandMat.emissiveIntensity = breath + musicEnergy * 0.22;
     }
 
     function createFireflies() {
@@ -2007,7 +1865,7 @@
       }
 
       fireflyPosAttr.needsUpdate = true;
-      fireflySystem.material.opacity = 0.66 + musicEnergy * 0.14 + meteorFlash * 0.08;
+      fireflySystem.material.opacity = 0.66 + musicEnergy * 0.14;
     }
 
     function createDust() {
@@ -2057,6 +1915,8 @@
       group.scale.set(0.82, 0.82, 0.82);
 
       group.userData.photoSrc = texture.userData?.src || null;
+      group.userData.photoW = width;
+      group.userData.photoH = height;
 
       group.layers.set(BASE_LAYER);
       frame.layers.set(BASE_LAYER);
@@ -2110,6 +1970,387 @@
           loader.load(pathJpg, (t) => { tunePhotoTexture(t, pathJpg); addPhotoToScene(t); }, undefined, () => {
             loader.load(pathPng, (t) => { tunePhotoTexture(t, pathPng); addPhotoToScene(t); }, undefined, () => { });
           });
+        }
+      }
+    }
+
+    // ===== ✅ 星星飞出变文字（漂浮+爱心粒子）=====
+    function makeLoveTextTexture(text){
+      const c = document.createElement('canvas');
+      c.width = 1400;
+      c.height = 260;
+      const ctx = c.getContext('2d');
+
+      ctx.clearRect(0,0,c.width,c.height);
+
+      // 背景微光
+      const bg = ctx.createRadialGradient(c.width/2, c.height/2, 10, c.width/2, c.height/2, c.width/2);
+      bg.addColorStop(0, 'rgba(255,255,255,0.12)');
+      bg.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = bg;
+      ctx.fillRect(0,0,c.width,c.height);
+
+      // 文字（发光 + 渐变）
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      // glow
+      ctx.font = '700 86px "Cinzel", system-ui, -apple-system, "PingFang SC", "Microsoft YaHei"';
+      ctx.shadowColor = 'rgba(255,120,190,0.65)';
+      ctx.shadowBlur = 24;
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.fillText(text, c.width/2, c.height/2);
+
+      // gradient main
+      ctx.shadowBlur = 0;
+      const grad = ctx.createLinearGradient(c.width*0.25, 0, c.width*0.75, 0);
+      grad.addColorStop(0.00, 'rgba(255,255,255,0.98)');
+      grad.addColorStop(0.35, 'rgba(214,240,255,0.98)');
+      grad.addColorStop(0.70, 'rgba(255,166,201,0.98)');
+      grad.addColorStop(1.00, 'rgba(255,255,255,0.98)');
+
+      ctx.lineWidth = 8;
+      ctx.strokeStyle = 'rgba(120,190,255,0.25)';
+      ctx.strokeText(text, c.width/2, c.height/2);
+
+      ctx.fillStyle = grad;
+      ctx.fillText(text, c.width/2, c.height/2);
+
+      // small spark dots
+      for (let i = 0; i < 120; i++) {
+        const x = (c.width/2) + (Math.random()-0.5)*900;
+        const y = (c.height/2) + (Math.random()-0.5)*160;
+        const a = Math.random()*Math.PI*2;
+        const r = 0.5 + Math.random()*1.8;
+        ctx.fillStyle = `rgba(255,255,255,${0.15 + Math.random()*0.35})`;
+        ctx.beginPath();
+        ctx.arc(x + Math.cos(a)*2, y + Math.sin(a)*2, r, 0, Math.PI*2);
+        ctx.fill();
+      }
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    function makeHeartTexture(){
+      const c = document.createElement('canvas');
+      c.width = 128; c.height = 128;
+      const ctx = c.getContext('2d');
+
+      ctx.clearRect(0,0,128,128);
+
+      // heart path
+      ctx.save();
+      ctx.translate(64, 70);
+      ctx.scale(1.05, 1.05);
+
+      ctx.beginPath();
+      ctx.moveTo(0, -10);
+      ctx.bezierCurveTo(30, -40, 70, -10, 0, 50);
+      ctx.bezierCurveTo(-70, -10, -30, -40, 0, -10);
+      ctx.closePath();
+
+      // glow + fill
+      const g = ctx.createRadialGradient(0, 10, 4, 0, 10, 70);
+      g.addColorStop(0.00, 'rgba(255,255,255,0.95)');
+      g.addColorStop(0.25, 'rgba(255,166,201,0.95)');
+      g.addColorStop(1.00, 'rgba(255,166,201,0.0)');
+      ctx.shadowColor = 'rgba(255,120,190,0.55)';
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = 'rgba(255,166,201,0.92)';
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = 'rgba(255,255,255,0.40)';
+      ctx.stroke();
+
+      ctx.restore();
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      return tex;
+    }
+
+    function createLoveTextAndHearts(){
+      // text sprite
+      loveTextTex = makeLoveTextTexture("zyj和gky要永远在一起💖");
+      const mat = new THREE.SpriteMaterial({
+        map: loveTextTex,
+        transparent: true,
+        opacity: 0.0,
+        depthWrite: false,
+        depthTest: false,
+        blending: THREE.AdditiveBlending
+      });
+      loveTextSprite = new THREE.Sprite(mat);
+      loveTextSprite.scale.set(18, 3.4, 1); // 初始尺寸（会动画）
+      loveTextSprite.visible = false;
+      loveTextSprite.layers.enable(BASE_LAYER);
+      loveTextSprite.layers.enable(BLOOM_LAYER);
+      mainGroup.add(loveTextSprite);
+
+      // heart pool
+      heartTex = makeHeartTexture();
+      const HEART_N = 46;
+      for (let i = 0; i < HEART_N; i++) {
+        const hm = new THREE.SpriteMaterial({
+          map: heartTex,
+          transparent: true,
+          opacity: 0.0,
+          depthWrite: false,
+          depthTest: false,
+          blending: THREE.AdditiveBlending
+        });
+        const hs = new THREE.Sprite(hm);
+        hs.scale.set(0.9, 0.9, 1);
+        hs.visible = false;
+        hs.layers.enable(BASE_LAYER);
+        hs.layers.enable(BLOOM_LAYER);
+        mainGroup.add(hs);
+
+        heartPool.push({
+          sprite: hs,
+          alive: false,
+          life: 0,
+          pos: new THREE.Vector3(),
+          vel: new THREE.Vector3(),
+          baseScale: 0.7 + Math.random()*0.7
+        });
+      }
+    }
+
+    function spawnHearts(localPos, count = 6){
+      for (let k = 0; k < count; k++) {
+        const h = heartPool.find(x => !x.alive);
+        if (!h) return;
+        h.alive = true;
+        h.life = 0.85 + Math.random()*0.55;
+        h.pos.copy(localPos).add(new THREE.Vector3(
+          (Math.random()-0.5)*0.8,
+          (Math.random()-0.5)*0.5,
+          (Math.random()-0.5)*0.5
+        ));
+        h.vel.set(
+          (Math.random()-0.5)*1.2,
+          1.2 + Math.random()*1.3,
+          (Math.random()-0.5)*0.6
+        );
+
+        h.sprite.position.copy(h.pos);
+        h.sprite.scale.setScalar(h.baseScale);
+        h.sprite.material.opacity = 0.0;
+        h.sprite.visible = true;
+      }
+    }
+
+    function updateHearts(dt){
+      for (const h of heartPool) {
+        if (!h.alive) continue;
+        h.life -= dt;
+        const a = clamp01(h.life / 1.2);
+
+        // move
+        h.vel.y += 0.4 * dt; // 上升更明显
+        h.pos.addScaledVector(h.vel, dt);
+        h.sprite.position.copy(h.pos);
+
+        // fade & scale
+        const op = (1 - a) * 0.85;
+        h.sprite.material.opacity = op;
+        const s = h.baseScale * (1.0 + (1-a)*0.65);
+        h.sprite.scale.set(s, s, 1);
+
+        // rotate-ish: Sprite没有旋转轴，我们用 material.rotation
+        h.sprite.material.rotation += dt * (0.9 + Math.random()*0.2);
+
+        if (h.life <= 0) {
+          h.alive = false;
+          h.sprite.visible = false;
+          h.sprite.material.opacity = 0.0;
+        }
+      }
+    }
+
+    function triggerStarLove(){
+      if (!topStarMesh || STAR_LOVE.active) return;
+
+      STAR_LOVE.active = true;
+      STAR_LOVE.phase = 0;
+      STAR_LOVE.t = 0;
+      STAR_LOVE.heartAcc = 0;
+
+      // 保存星星原始 local transform
+      STAR_LOVE.origPos.copy(topStarMesh.position);
+      STAR_LOVE.origScale.copy(topStarMesh.scale);
+      STAR_LOVE.origRot.copy(topStarMesh.rotation);
+
+      // fly target（朝镜头方向 + 稍微上抛）
+      STAR_LOVE.flyPos.copy(STAR_LOVE.origPos).add(new THREE.Vector3(0, 1.6, 14));
+
+      // 初始化文字 sprite
+      if (loveTextSprite) {
+        loveTextSprite.visible = false;
+        loveTextSprite.material.opacity = 0.0;
+        loveTextSprite.position.copy(STAR_LOVE.origPos);
+        loveTextSprite.scale.set(14.5, 2.8, 1);
+      }
+
+      // 星星先确保可见
+      topStarMesh.visible = true;
+      if (topStarMesh.material) {
+        topStarMesh.material.opacity = 1.0;
+        topStarMesh.material.transparent = true;
+      }
+
+      // 立即喷一小点心作为“启动”
+      spawnHearts(STAR_LOVE.origPos.clone(), 5);
+    }
+
+    function updateStarLove(dt, t){
+      if (!STAR_LOVE.active || !topStarMesh) return;
+
+      STAR_LOVE.t += dt;
+
+      const starMat = topStarMesh.material;
+
+      // 文字漂浮（如果可见）
+      if (loveTextSprite && loveTextSprite.visible) {
+        const bob = Math.sin(t * 2.1) * 0.12;
+        loveTextSprite.position.y += bob * dt * 6; // dt修正
+      }
+
+      // phase machine
+      if (STAR_LOVE.phase === 0) {
+        // fly
+        const p = clamp01(STAR_LOVE.t / STAR_LOVE.durFly);
+        const e = easeOutCubic(p);
+
+        topStarMesh.position.lerpVectors(STAR_LOVE.origPos, STAR_LOVE.flyPos, e);
+        topStarMesh.scale.lerpVectors(STAR_LOVE.origScale, STAR_LOVE.origScale.clone().multiplyScalar(1.25), e);
+
+        topStarMesh.rotation.z += dt * (3.2 + musicEnergy*1.2);
+        topStarMesh.rotation.y += dt * (1.6 + musicEnergy*0.9);
+
+        if (p >= 1) {
+          STAR_LOVE.phase = 1;
+          STAR_LOVE.t = 0;
+        }
+      }
+      else if (STAR_LOVE.phase === 1) {
+        // morph in: star -> text
+        const p = clamp01(STAR_LOVE.t / STAR_LOVE.durMorphIn);
+        const e = easeInOutCubic(p);
+
+        // star fade out
+        if (starMat) starMat.opacity = 1.0 - e;
+        topStarMesh.scale.lerpVectors(
+          STAR_LOVE.origScale.clone().multiplyScalar(1.25),
+          STAR_LOVE.origScale.clone().multiplyScalar(0.70),
+          e
+        );
+
+        // text fade in
+        if (loveTextSprite) {
+          loveTextSprite.visible = true;
+          loveTextSprite.position.copy(topStarMesh.position);
+          loveTextSprite.material.opacity = e;
+          const s = 14.5 + e * 4.0;
+          loveTextSprite.scale.set(s, (2.8 + e*0.6), 1);
+        }
+
+        // hearts burst
+        STAR_LOVE.heartAcc += dt;
+        if (STAR_LOVE.heartAcc > 0.08) {
+          STAR_LOVE.heartAcc = 0;
+          spawnHearts(topStarMesh.position.clone(), 2 + Math.floor(Math.random()*2));
+        }
+
+        if (p >= 1) {
+          // 隐藏星星（完全透明时）
+          topStarMesh.visible = false;
+          if (starMat) starMat.opacity = 0.0;
+
+          STAR_LOVE.phase = 2;
+          STAR_LOVE.t = 0;
+        }
+      }
+      else if (STAR_LOVE.phase === 2) {
+        // hold
+        const p = clamp01(STAR_LOVE.t / STAR_LOVE.durHold);
+
+        if (loveTextSprite) {
+          loveTextSprite.position.copy(STAR_LOVE.flyPos);
+          // 漂浮+微微放大缩小
+          const pulse = 1.0 + 0.035 * Math.sin(t * 3.0);
+          loveTextSprite.scale.set(18 * pulse, 3.4 * pulse, 1);
+          loveTextSprite.material.opacity = 0.92 + 0.08 * Math.sin(t*2.6);
+        }
+
+        // 持续“温柔”冒心
+        STAR_LOVE.heartAcc += dt;
+        if (STAR_LOVE.heartAcc > 0.12) {
+          STAR_LOVE.heartAcc = 0;
+          spawnHearts(STAR_LOVE.flyPos.clone(), 1 + Math.floor(Math.random()*2));
+        }
+
+        if (p >= 1) {
+          STAR_LOVE.phase = 3;
+          STAR_LOVE.t = 0;
+        }
+      }
+      else if (STAR_LOVE.phase === 3) {
+        // fade out text
+        const p = clamp01(STAR_LOVE.t / STAR_LOVE.durFadeOut);
+        const e = easeInOutCubic(p);
+
+        if (loveTextSprite) {
+          loveTextSprite.material.opacity = (1.0 - e) * 0.95;
+          const s = 18 * (1.0 - 0.18*e);
+          loveTextSprite.scale.set(s, 3.4*(1.0 - 0.18*e), 1);
+        }
+
+        if (p >= 1) {
+          if (loveTextSprite) {
+            loveTextSprite.visible = false;
+            loveTextSprite.material.opacity = 0.0;
+          }
+
+          // 让星星准备回归
+          topStarMesh.visible = true;
+          if (starMat) starMat.opacity = 0.0;
+          topStarMesh.position.copy(STAR_LOVE.flyPos);
+          topStarMesh.scale.copy(STAR_LOVE.origScale.clone().multiplyScalar(0.75));
+
+          STAR_LOVE.phase = 4;
+          STAR_LOVE.t = 0;
+        }
+      }
+      else if (STAR_LOVE.phase === 4) {
+        // return: star flies back
+        const p = clamp01(STAR_LOVE.t / STAR_LOVE.durReturn);
+        const e = easeInOutCubic(p);
+
+        topStarMesh.position.lerpVectors(STAR_LOVE.flyPos, STAR_LOVE.origPos, e);
+        topStarMesh.scale.lerpVectors(STAR_LOVE.origScale.clone().multiplyScalar(0.75), STAR_LOVE.origScale, e);
+        if (starMat) starMat.opacity = e;
+
+        topStarMesh.rotation.z += dt * 2.4;
+        topStarMesh.rotation.y += dt * 1.2;
+
+        if (p >= 1) {
+          // restore
+          topStarMesh.position.copy(STAR_LOVE.origPos);
+          topStarMesh.scale.copy(STAR_LOVE.origScale);
+          topStarMesh.rotation.copy(STAR_LOVE.origRot);
+          if (starMat) starMat.opacity = 1.0;
+
+          STAR_LOVE.active = false;
+          STAR_LOVE.phase = 0;
+          STAR_LOVE.t = 0;
         }
       }
     }
@@ -2222,8 +2463,6 @@
         finalComposer.setSize(window.innerWidth, window.innerHeight);
         if (bloomComposer.setPixelRatio) bloomComposer.setPixelRatio(dpr);
         if (finalComposer.setPixelRatio) finalComposer.setPixelRatio(dpr);
-
-        resizeHeartCanvas();
       }, { passive: true });
 
       if (fileInput) fileInput.addEventListener('change', handleImageUpload);
@@ -2286,13 +2525,11 @@
 
         const intersects = raycaster.intersectObjects(mainGroup.children, true);
 
-        // ✅ 点击树顶星星：漂浮文字 + 爱心粒子
+        // ✅ 点击树顶星星：星星飞出变文字，再回来
         for (let hit of intersects) {
           const starObj = findAncestorFlag(hit.object, 'isTopStar');
           if (starObj) {
-            spawnHeartsBurst("zyj和gky要永远在一起💖");
-            // 同时给一点点“闪”反馈
-            meteorFlash = Math.max(meteorFlash, 0.55);
+            triggerStarLove();
             return;
           }
         }
@@ -2300,7 +2537,9 @@
         let clickedParticle = null;
         for (let hit of intersects) {
           let obj = hit.object;
-          while (obj.parent && obj.parent !== mainGroup && obj.parent !== photoMeshGroup) obj = obj.parent;
+          while (obj.parent && obj.parent !== mainGroup && obj.parent !== photoMeshGroup) {
+            obj = obj.parent;
+          }
           const p = particleSystem.find(pp => pp.mesh === obj && pp.type === 'PHOTO');
           if (p) { clickedParticle = p; break; }
         }
@@ -2329,20 +2568,6 @@
       const t = clock.elapsedTime;
 
       updateMusicEnergy();
-
-      // 爆闪衰减
-      meteorFlash = Math.max(0, meteorFlash - dt * 1.6);
-
-      // ✅ 拖影强度动态：流星/爆闪更明显，其他时间轻微
-      if (afterimagePass) {
-        const base = 0.88; // 平时轻
-        const boost = 0.08 * meteorFlash; // 爆闪时更拖
-        const focusReduce = (STATE.mode === 'FOCUS') ? 0.03 : 0.0; // focus 期间更干净
-        afterimagePass.uniforms.damp.value = Math.min(0.96, Math.max(0.84, base + boost - focusReduce));
-      }
-
-      // ✅ 爆闪会让整体曝光稍微跳一下（像真实长曝光）
-      renderer.toneMappingExposure = 1.45 + meteorFlash * 0.20;
 
       if (STATE.hand.detected) {
         if (!STATE.gesture.active) {
@@ -2376,9 +2601,14 @@
       updateGarlandBreath(t);
       updateCinematicCamera(dt, t);
 
+      // ✅ 星星飞出变文字更新 + 心心更新
+      updateStarLove(dt, t);
+      updateHearts(dt);
+
       particleSystem.forEach(p => p.update(dt, STATE.mode, STATE.focusTarget));
       updateSnow();
 
+      // Selective Bloom render
       camera.layers.set(BLOOM_LAYER);
       bloomComposer.render();
 
