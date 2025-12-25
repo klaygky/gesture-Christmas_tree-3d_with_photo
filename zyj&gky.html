@@ -7,7 +7,6 @@
 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
-  - 如需使用或分发，请务必保留此作者声明。gky  - 如需使用或分发，请务必保留此作者声明。g k y  g="zh-CN">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
@@ -572,7 +571,12 @@
       hand: { detected: false, x: 0, y: 0 },
       rotation: { x: 0, y: 0 },
       touch: { active: false, startX: 0, startY: 0, lastX: 0, lastY: 0 },
-      gesture: { lastCircleAt: 0, cooldownMs: 1200, circleAcc: 0, lastAngle: null, buf: [], active: false }
+
+      // 旧的 circle gesture 已不使用，但保留字段以不影响其它逻辑
+      gesture: { active: false },
+
+      // ✅ 新增：拇指点赞检测状态（边沿触发 + 冷却）
+      thumb: { prev: false, lastAt: 0, cooldownMs: 1200 }
     };
 
     // ===== THREE =====
@@ -644,26 +648,24 @@
       heartAcc: 0
     };
 
-    // ===== ✅ 礼物盒彩蛋（新增）=====
-    let giftRoot = null;      // attached to camera (HUD-style)
-    let giftGroup = null;     // rotating box group
+    // ===== ✅ 礼物盒彩蛋 =====
+    let giftRoot = null;
+    let giftGroup = null;
     let giftLid = null;
     let giftBase = null;
     let giftBow = null;
     let giftGlow = null;
 
     const GIFT = {
-      locked: true,      // true: tree hidden until opened
-      phase: 0,          // 0 idle, 1 open, 2 launch, 3 fade
+      locked: true,
+      phase: 0,
       t: 0,
       opened: false,
-      // durations
       durOpen: 0.62,
       durLaunch: 0.95,
       durFade: 0.60,
-      // cached
       lidRot0: 0,
-      lidRot1: -1.15,    // opening angle
+      lidRot1: -1.15,
       startWorld: new THREE.Vector3(),
       startScale: 0.06,
       endScale: 1.0
@@ -741,84 +743,51 @@
       showMsg(`🌀 Palette: ${PALETTES[paletteIndex].name}`);
     }
 
-    // ===== 食指转圈检测 =====
-    function isSingleIndexUp(lm){
+    // =========================================================
+    // ✅ 拇指点赞检测（替换原“食指转圈检测”）
+    // 规则：拇指向上（y 递减）+ 其它四指收起（tip.y > pip.y）
+    // 再加一个“拇指与掌心分离”的比例约束，减少误触
+    // =========================================================
+    function isThumbsUp(lm){
       if (!lm || lm.length < 21) return false;
-      const indexTip = lm[8], indexPIP = lm[6], indexMCP = lm[5];
+
+      const wrist = lm[0];
+      const middleMCP = lm[9];
+      const handSize = Math.hypot(middleMCP.x - wrist.x, middleMCP.y - wrist.y) + 1e-6;
+
+      const thumbTip = lm[4], thumbIP = lm[3], thumbMCP = lm[2];
+      const indexTip = lm[8], indexPIP = lm[6];
       const middleTip = lm[12], middlePIP = lm[10];
       const ringTip = lm[16], ringPIP = lm[14];
       const pinkyTip = lm[20], pinkyPIP = lm[18];
-      const indexUp = (indexTip.y < indexPIP.y) && (indexPIP.y < indexMCP.y);
+
+      const thumbUp = (thumbTip.y < thumbIP.y) && (thumbIP.y < thumbMCP.y);
+
       const othersFolded =
+        (indexTip.y  > indexPIP.y) &&
         (middleTip.y > middlePIP.y) &&
         (ringTip.y   > ringPIP.y) &&
         (pinkyTip.y  > pinkyPIP.y);
-      return indexUp && othersFolded;
+
+      // 拇指离开掌心一些（减少“手掌抬起来就误判”）
+      const sep = Math.hypot(thumbTip.x - lm[5].x, thumbTip.y - lm[5].y) / handSize;
+      const sepOk = sep > 0.55;
+
+      return thumbUp && othersFolded && sepOk;
     }
-    function normAngle(a){
-      while (a > Math.PI) a -= Math.PI * 2;
-      while (a < -Math.PI) a += Math.PI * 2;
-      return a;
-    }
-    function processIndexCircle(lm){
+
+    function processThumbsUp(lm){
       const now = performance.now();
-      if (!isSingleIndexUp(lm)) {
-        STATE.gesture.active = false;
-        STATE.gesture.circleAcc = 0;
-        STATE.gesture.lastAngle = null;
-        STATE.gesture.buf.length = 0;
-        return;
-      }
-      const tip = lm[8];
-      const p = { x: tip.x, y: tip.y, t: now };
-      const buf = STATE.gesture.buf;
-      buf.push(p);
-      if (buf.length > 18) buf.shift();
-      if (buf.length < 10) { STATE.gesture.active = true; return; }
+      const up = isThumbsUp(lm);
 
-      let cx = 0, cy = 0;
-      for (const q of buf) { cx += q.x; cy += q.y; }
-      cx /= buf.length; cy /= buf.length;
-
-      let rSum = 0, rMin = 1e9, rMax = 0;
-      for (const q of buf) {
-        const r = Math.hypot(q.x - cx, q.y - cy);
-        rSum += r;
-        rMin = Math.min(rMin, r);
-        rMax = Math.max(rMax, r);
-      }
-      const rMean = rSum / buf.length;
-
-      let path = 0;
-      for (let i = 1; i < buf.length; i++) {
-        path += Math.hypot(buf[i].x - buf[i-1].x, buf[i].y - buf[i-1].y);
+      // 边沿触发：非 up -> up 才触发
+      if (up && !STATE.thumb.prev && (now - STATE.thumb.lastAt > STATE.thumb.cooldownMs)) {
+        STATE.thumb.lastAt = now;
+        cyclePalette();
+        showMsg("👍 拇指点赞，圣诞树换色～", 1400);
       }
 
-      const radiusOk = (rMean > 0.03 && rMean < 0.18) && (rMax - rMin < 0.14);
-      const motionOk = path > 0.25;
-
-      const angle = Math.atan2(p.y - cy, p.x - cx);
-
-      if (STATE.gesture.lastAngle !== null) {
-        const dAng = normAngle(angle - STATE.gesture.lastAngle);
-        if (radiusOk && motionOk) {
-          STATE.rotation.y += dAng * 1.35;
-          STATE.gesture.circleAcc += dAng;
-          STATE.gesture.active = true;
-        }
-      }
-      STATE.gesture.lastAngle = angle;
-
-      if (STATE.gesture.active && Math.abs(STATE.gesture.circleAcc) > Math.PI * 2 * 0.85) {
-        if (now - STATE.gesture.lastCircleAt > STATE.gesture.cooldownMs) {
-          STATE.gesture.lastCircleAt = now;
-          STATE.gesture.circleAcc = 0;
-          STATE.gesture.lastAngle = null;
-          buf.length = 0;
-          cyclePalette();
-          showMsg("🌀 你转圈，我换色～", 1400);
-        }
-      }
+      STATE.thumb.prev = up;
     }
 
     // ===== cinematic camera =====
@@ -897,7 +866,7 @@
 
       createLoveTextAndHearts();
 
-      // ✅ 新增：礼物盒（在树创建完后，把树隐藏掉，等礼物打开飞出）
+      // 礼物盒：树隐藏直到打开
       createGiftBox();
       mainGroup.visible = false;
       GIFT.locked = true;
@@ -935,7 +904,7 @@
       renderer.toneMappingExposure = 1.45;
       container.appendChild(renderer.domElement);
 
-      // ✅ 为了把礼物“贴在屏幕底部”，需要把 camera 加入 scene
+      // 为了把礼物贴在屏幕底部
       scene.add(camera);
 
       mainGroup = new THREE.Group();
@@ -2001,7 +1970,7 @@
       }
     }
 
-    // ===== ✅ 星星飞出变文字（保持你原来的）=====
+    // ===== 星星飞出变文字（保持原逻辑）=====
     function makeLoveTextTexture(text){
       const c = document.createElement('canvas');
       c.width = 1600;
@@ -2362,21 +2331,19 @@
       }
     }
 
-    // ===== ✅ 礼物盒：创建 + 动画 =====
+    // ===== 礼物盒：创建 + 动画 =====
     function createGiftBox(){
       giftRoot = new THREE.Group();
       giftRoot.name = "GIFT_ROOT";
       giftRoot.layers.enable(BASE_LAYER);
       camera.add(giftRoot);
 
-      // 放在屏幕底部、Surprise 上方（你可以微调 y/z）
       giftRoot.position.set(0, -7.2, -22.0);
 
       giftGroup = new THREE.Group();
       giftGroup.name = "GIFT_GROUP";
       giftRoot.add(giftGroup);
 
-      // pink materials
       const pinkMat = new THREE.MeshPhysicalMaterial({
         color: 0xff7fb4,
         metalness: 0.25,
@@ -2384,7 +2351,7 @@
         clearcoat: 1.0,
         clearcoatRoughness: 0.12,
         envMapIntensity: 1.35,
-        emissive: 0x0a0206, 
+        emissive: 0x0a0206,
         emissiveIntensity: 0.03,
         transparent: true,
         opacity: 1.0
@@ -2397,7 +2364,7 @@
         clearcoat: 1.0,
         clearcoatRoughness: 0.10,
         envMapIntensity: 1.4,
-        emissive: 0xff3f9a, 
+        emissive: 0xff3f9a,
         emissiveIntensity: 0.08,
         transparent: true,
         opacity: 1.0
@@ -2414,25 +2381,20 @@
         opacity: 1.0
       });
 
-      // base
       const baseGeo = new THREE.BoxGeometry(3.5, 2.6, 3.5);
       giftBase = new THREE.Mesh(baseGeo, pinkMat);
       giftBase.position.set(0, 0.0, 0);
       giftBase.layers.enable(BASE_LAYER);
-      giftBase.layers.enable(BASE_LAYER);
       giftBase.userData.isGift = true;
       giftGroup.add(giftBase);
 
-      // lid
       const lidGeo = new THREE.BoxGeometry(3.7, 1.0, 3.7);
       giftLid = new THREE.Mesh(lidGeo, pinkMat);
       giftLid.position.set(0, 1.8, 0);
       giftLid.layers.enable(BASE_LAYER);
-      giftLid.layers.enable(BASE_LAYER);
       giftLid.userData.isGift = true;
       giftGroup.add(giftLid);
 
-      // little silver edges
       const edgeGeo = new THREE.BoxGeometry(3.78, 0.12, 3.78);
       const edge = new THREE.Mesh(edgeGeo, edgeMat);
       edge.position.set(0, 2.28, 0);
@@ -2440,7 +2402,6 @@
       edge.layers.enable(BLOOM_LAYER);
       giftGroup.add(edge);
 
-      // ribbons (cross)
       const ribbon1 = new THREE.Mesh(new THREE.BoxGeometry(0.55, 2.8, 3.62), ribbonMat);
       ribbon1.position.set(0, 0.10, 0);
       ribbon1.layers.enable(BASE_LAYER); ribbon1.layers.enable(BLOOM_LAYER);
@@ -2451,7 +2412,6 @@
       ribbon2.layers.enable(BASE_LAYER); ribbon2.layers.enable(BLOOM_LAYER);
       giftGroup.add(ribbon2);
 
-      // bow (two torus knots)
       giftBow = new THREE.Group();
       giftBow.position.set(0, 2.55, 0);
       giftGroup.add(giftBow);
@@ -2472,11 +2432,10 @@
 
       giftBow.add(bowL, bowR, knot);
 
-      // subtle glow under box
       const glowMat = new THREE.MeshBasicMaterial({
         color: 0xff6bb5,
         transparent: true,
-        opacity: 0.10, 
+        opacity: 0.10,
         depthWrite: false,
         blending: THREE.AdditiveBlending
       });
@@ -2508,15 +2467,11 @@
       GIFT.phase = 1;
       GIFT.t = 0;
       showMsg("啪！🎁", 900);
-
-      // 小爆炸爱心（用你现有的爱心粒子）
-      // 在盒子附近撒一波（把 giftRoot 的 local 转成 mainGroup local 不方便，所以直接用世界空间近似：等 tree 出来时再撒）
     }
 
     function updateGift(dt, t){
       if (!giftRoot || !giftGroup) return;
 
-      // idle rotation + bob
       if (GIFT.phase === 0) {
         const rot = 0.65 + musicEnergy * 0.55;
         giftGroup.rotation.y += dt * rot;
@@ -2525,77 +2480,61 @@
         if (giftGlow?.material) giftGlow.material.opacity = 0.18 + 0.10 * (0.5 + 0.5*Math.sin(t*2.2)) + musicEnergy*0.10;
       }
 
-      // opening lid
       if (GIFT.phase === 1) {
         GIFT.t += dt;
         const p = clamp01(GIFT.t / GIFT.durOpen);
         const e = easeInOutCubic(p);
 
-        // hinge effect: move lid pivot back a little
         giftLid.position.set(0, 1.8, 0.0);
         giftLid.rotation.x = THREE.MathUtils.lerp(GIFT.lidRot0, GIFT.lidRot1, e);
 
-        // small shake
         giftGroup.rotation.y += dt * (2.6 + musicEnergy*1.2);
         giftGroup.rotation.z = Math.sin(t*26) * 0.01 * (1-e);
 
         if (p >= 1) {
-          // start launch
           GIFT.phase = 2;
           GIFT.t = 0;
 
-          // get gift world position (where tree should spawn)
           giftRoot.updateMatrixWorld(true);
           giftGroup.updateMatrixWorld(true);
           giftGroup.getWorldPosition(GIFT.startWorld);
 
-          // show tree at gift pos, small scale
           mainGroup.visible = true;
           mainGroup.position.copy(GIFT.startWorld);
           mainGroup.scale.setScalar(GIFT.startScale);
 
-          // reset rotations for a clean reveal
           STATE.rotation.x = 0;
           STATE.rotation.y = 0;
 
-          // hearts burst at spawn
-          // (hearts are in mainGroup local space; we spawn at current mainGroup position's local origin)
           spawnHearts(new THREE.Vector3(0, 0, 0), 18);
         }
       }
 
-      // launch tree to center
       if (GIFT.phase === 2) {
         GIFT.t += dt;
         const p = clamp01(GIFT.t / GIFT.durLaunch);
         const e = easeOutCubic(p);
 
-        // tree flies up to origin (0,0,0) of scene
         mainGroup.position.lerpVectors(GIFT.startWorld, new THREE.Vector3(0, 0, 0), e);
         const s = THREE.MathUtils.lerp(GIFT.startScale, GIFT.endScale, e);
         mainGroup.scale.setScalar(s);
 
-        // add a little spin during flight
         STATE.rotation.y += dt * (0.9 + musicEnergy*0.6);
         STATE.rotation.x += dt * 0.08;
 
-        // sparkle hearts while rising
         if (Math.random() < 0.28) spawnHearts(new THREE.Vector3(0, 0, 0), 2);
 
         if (p >= 1) {
-          // finalize
           mainGroup.position.set(0,0,0);
           mainGroup.scale.setScalar(1);
           GIFT.locked = false;
           GIFT.opened = true;
 
-          // fade gift away
           GIFT.phase = 3;
           GIFT.t = 0;
         }
       }
 
-      // fade gift out
       if (GIFT.phase === 3) {
         GIFT.t += dt;
         const p = clamp01(GIFT.t / GIFT.durFade);
@@ -2643,7 +2582,8 @@
         camBtn.classList.add('active');
         isCameraRunning = true;
 
-        showMsg("摄像头已开启：单食指🖐️转圈 → 换色 & 树跟着转");
+        // ✅ 提示改为拇指点赞
+        showMsg("摄像头已开启：👍拇指向上 → 换色");
       } catch (e) {
         console.warn("Camera error:", e);
         let msg = "Camera Error: " + e.name;
@@ -2671,7 +2611,11 @@
         STATE.hand.detected = true;
         const lm = result.landmarks[0];
 
-        processIndexCircle(lm);
+        // ✅ 用拇指点赞替换原“转圈”
+        processThumbsUp(lm);
+
+        // 不再使用 circle gesture
+        STATE.gesture.active = false;
 
         const wrist = lm[0];
         const middleMCP = lm[9];
@@ -2702,9 +2646,7 @@
       } else {
         STATE.hand.detected = false;
         STATE.gesture.active = false;
-        STATE.gesture.circleAcc = 0;
-        STATE.gesture.lastAngle = null;
-        STATE.gesture.buf.length = 0;
+        STATE.thumb.prev = false; // ✅ 没检测到手就重置 prev，下一次点赞能触发
       }
     }
 
@@ -2759,7 +2701,6 @@
 
       window.addEventListener('pointermove', (e) => {
         if (!STATE.touch.active) return;
-        // 礼物阶段也允许轻微拖动（但你想完全禁用也可以在这里判断 GIFT.locked）
         const deltaX = e.clientX - STATE.touch.lastX;
         const deltaY = e.clientY - STATE.touch.lastY;
         STATE.rotation.y += deltaX * 0.005;
@@ -2781,24 +2722,18 @@
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
 
-        // ✅ 先检测礼物盒点击（树还没出来时最重要）
         if (GIFT.locked && giftRoot && giftRoot.visible) {
           const hitsGift = raycaster.intersectObjects(giftRoot.children, true);
           if (hitsGift && hitsGift.length > 0) {
-            const isGift = findAncestorFlag(hitsGift[0].object, 'isGift') || hitsGift[0].object.userData?.isGift;
-            if (isGift || true) { // 命中 giftRoot 就开
-              triggerGiftOpen();
-              return;
-            }
+            triggerGiftOpen();
+            return;
           }
         }
 
-        // 树未解锁时，其它点击不处理
         if (GIFT.locked) return;
 
         const intersects = raycaster.intersectObjects(mainGroup.children, true);
 
-        // 点击树顶星星：星星飞出变文字，再回来
         for (let hit of intersects) {
           const starObj = findAncestorFlag(hit.object, 'isTopStar');
           if (starObj) {
@@ -2842,7 +2777,6 @@
 
       updateMusicEnergy();
 
-      // 礼物阶段：树还没出来时，别让树逻辑“抢戏”，但背景（星空/极光/雪）照常跑
       if (!GIFT.locked) {
         if (STATE.hand.detected) {
           if (!STATE.gesture.active) {
@@ -2877,7 +2811,7 @@
       updateGarlandBreath(t);
       updateCinematicCamera(dt, t);
 
-      updateGift(dt, t); // ✅ 礼物盒动画
+      updateGift(dt, t);
       updateStarLove(dt, t);
       updateHearts(dt);
 
