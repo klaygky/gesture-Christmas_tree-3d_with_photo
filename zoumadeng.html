@@ -1,367 +1,200 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Diptyque Atmosphere Demo</title>
-    <style>
-        :root {
-            /* 更深邃、更温暖的色调 */
-            --gold-light: #fff3c5;
-            --gold-mid: #d4af37;
-            --gold-dark: #8c7224;
-            --flame-core: #ffffcc;
-            --flame-outer: #ff9933;
-            --bg-color: #020100; /* 几近全黑 */
-            --wall-glow: radial-gradient(circle at center, rgba(255, 160, 60, 0.25) 0%, rgba(0,0,0,1) 70%);
-        }
+/* RESET & VARS */
+:root {
+    --c-text: #eae0d5;
+    --c-accent: #d4af37; /* Gold */
+    --c-ui-bg: rgba(20, 20, 20, 0.4);
+    --font-serif: 'Times New Roman', Times, serif;
+    --font-sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    --ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+}
 
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: var(--bg-color);
-            height: 100vh;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            overflow: hidden;
-            perspective: 1200px; /* 加深透视感 */
-        }
+* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
 
-        /* 背景墙面的光晕 */
-        .wall-illumination {
-            position: absolute;
-            width: 200%;
-            height: 200%;
-            background: var(--wall-glow);
-            z-index: -2; /* 最底层 */
-        }
+body {
+    background: #050505;
+    color: var(--c-text);
+    font-family: var(--font-sans);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+}
 
-        /* 场景总容器，用于鼠标互动倾斜 */
-        .scene-wrapper {
-            position: relative;
-            width: 300px;
-            height: 500px;
-            transform-style: preserve-3d;
-            transition: transform 0.1s ease-out;
-        }
+/* NOISE OVERLAY (Base64 for pure CSS solution) */
+body::after {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 999;
+    opacity: 0.04;
+    background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIj48ZmlsdGVyIGlkPSJnoiPjxmZVR1cmJ1bGVuY2UgdHlwZT0iZnJhY3RhbE5vaXNlIiBiYXNlRnJlcXVlbmN5PSIwLjY1IiAvPjwvZmlsdGVyPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbHRlcj0idXJsKCNnKSIgb3BhY2l0eT0iMSIvPjwvc3ZnPg==');
+}
 
-        /* =========================================
-           影子投射层 (关键 Trick)
-           它在真实物体后面，同步旋转，但更大、更模糊
-        ========================================= */
-        .shadow-layer {
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            transform-style: preserve-3d;
-            z-index: -1; /* 在真实物体后面 */
-            pointer-events: none;
-            /* 整体后移并放大，模拟投射到远墙 */
-            transform: translateZ(-200px) scale(2.5);
-            filter: blur(15px); /* 关键：极度模糊产生柔和影子 */
-            opacity: 0.7;
-        }
+/* VIGNETTE */
+body::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    pointer-events: none;
+    z-index: 998;
+    background: radial-gradient(circle at center, transparent 40%, rgba(0,0,0,0.6) 100%);
+}
 
-        .shadow-assembly {
-            position: absolute;
-            top: 50px;
-            left: 50%;
-            transform-style: preserve-3d;
-            /* 必须与实体走马灯使用相同的旋转动画 */
-            animation: rotateCarousel 15s linear infinite;
-        }
+#canvas-container {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 0;
+}
 
-        .shadow-charm-shape {
-            position: absolute;
-            top: 0;
-            left: -25px;
-            width: 50px;
-            height: 70px;
-            background: #000; /* 纯黑影子 */
-            /* 与实体吊坠相同的形状 */
-            clip-path: polygon(50% 0%, 100% 30%, 80% 100%, 20% 100%, 0% 30%);
-            transform-origin: top center;
-             /* 影子也需要一点摆动，增加真实感 */
-            animation: swingShadow 4s ease-in-out infinite alternate;
-        }
+/* UI LAYER */
+.ui-layer {
+    position: relative;
+    z-index: 10;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 2rem;
+    pointer-events: none; /* Let clicks pass to canvas */
+}
 
+/* HEADER */
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: auto;
+}
 
-        /* =========================================
-           实体走马灯层
-        ========================================= */
-        .carousel-assembly {
-            position: absolute;
-            top: 50px;
-            left: 50%;
-            transform-style: preserve-3d;
-            animation: rotateCarousel 15s linear infinite;
-        }
+.brand {
+    font-family: var(--font-serif);
+    font-size: 1.1rem;
+    letter-spacing: 0.2rem;
+    text-transform: uppercase;
+    color: var(--c-text);
+    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+}
 
-        /* 顶部扇叶 (更精致的金属感) */
-        .turbine {
-            position: absolute;
-            top: -15px;
-            left: -70px;
-            width: 140px;
-            height: 140px;
-            /* 金属拉丝效果 */
-            background: repeating-conic-gradient(from 0deg, var(--gold-mid) 0deg 10deg, var(--gold-dark) 10deg 20deg, var(--gold-light) 20deg 30deg);
-            border-radius: 50%;
-            transform: rotateX(90deg);
-            box-shadow: inset 0 0 20px rgba(0,0,0,0.5), 0 5px 15px rgba(0,0,0,0.3);
-            border: 2px solid var(--gold-dark);
-        }
+.controls {
+    display: flex;
+    gap: 1rem;
+}
 
-        /* 吊坠容器 */
-        .charm-container {
-            position: absolute;
-            transform-style: preserve-3d;
-        }
+.btn-icon {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.2);
+    color: var(--c-text);
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-family: var(--font-serif);
+    transition: all 0.3s var(--ease-out);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
 
-        /* 实体吊坠 */
-        .charm-real {
-            position: absolute;
-            top: 0;
-            left: -20px;
-            width: 40px;
-            height: 60px;
-            /* 高亮的金色材质 */
-            background: linear-gradient(135deg, var(--gold-light) 0%, var(--gold-mid) 40%, var(--gold-dark) 100%);
-            clip-path: polygon(50% 0%, 100% 30%, 80% 100%, 20% 100%, 0% 30%);
-            transform-origin: top center;
-            backface-visibility: visible;
-            /* 自身发光感，因为离蜡烛很近 */
-            box-shadow: 0 0 25px rgba(255, 200, 50, 0.6);
-            border: 1px solid var(--gold-light);
-            animation: swingReal 4s ease-in-out infinite alternate;
-        }
+.btn-icon:hover {
+    background: rgba(255,255,255,0.1);
+    border-color: var(--c-text);
+}
 
-        .string {
-            position: absolute;
-            top: -25px;
-            left: 50%;
-            width: 1px;
-            height: 25px;
-            background: var(--gold-light);
-            opacity: 0.8;
-        }
+.btn-icon.active {
+    background: var(--c-text);
+    color: #000;
+}
 
+/* FOOTER / CAROUSEL */
+.footer {
+    pointer-events: auto;
+    width: 100%;
+    overflow: hidden;
+    padding-bottom: 1rem;
+}
 
-        /* =========================================
-           玻璃蜡烛罐
-        ========================================= */
-        .candle-jar {
-            position: absolute;
-            bottom: 60px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 120px;
-            height: 160px;
-            /* 玻璃质感：半透明白 + 模糊背景 */
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(2px);
-            border-radius: 4px;
-            /* 玻璃边缘反光 */
-            border-left: 1px solid rgba(255,255,255,0.3);
-            border-right: 1px solid rgba(255,255,255,0.3);
-            box-shadow: 
-                inset 0 0 30px rgba(255, 160, 60, 0.3), /* 内部烛光映照 */
-                0 10px 30px rgba(0,0,0,0.5); /* 外部阴影 */
-            display: flex;
-            justify-content: center;
-            align-items: flex-end;
-            padding-bottom: 20px;
-            transform-style: preserve-3d;
-        }
+.chapter-scroller {
+    display: flex;
+    gap: 2rem;
+    overflow-x: auto;
+    padding: 1rem 0;
+    scroll-behavior: smooth;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
 
-        /* 蜡烛里的蜡 */
-        .wax {
-            width: 90%;
-            height: 60%;
-            background: linear-gradient(to bottom, #fffcf0, #f0ead6);
-            border-radius: 2px;
-            box-shadow: inset 0 -5px 10px rgba(0,0,0,0.1);
-            position: relative;
-             display: flex;
-            justify-content: center;
-        }
+.chapter-scroller::-webkit-scrollbar { display: none; }
 
-        /* 烛芯和火焰 */
-        .wick {
-            width: 2px;
-            height: 10px;
-            background: #333;
-            position: absolute;
-            top: -10px;
-        }
+.chapter-card {
+    min-width: 200px;
+    padding: 1rem;
+    background: rgba(20,20,20,0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(5px);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.3s var(--ease-out);
+    opacity: 0.6;
+    transform: translateY(0);
+}
 
-        .flame {
-            position: absolute;
-            top: -28px;
-            width: 16px;
-            height: 30px;
-            background: radial-gradient(ellipse at bottom, var(--flame-core) 10%, var(--flame-outer) 60%, transparent 100%);
-            border-radius: 50% 50% 20% 20%;
-            filter: blur(1px);
-            animation: flicker 0.1s infinite alternate;
-            /* 极其强烈的中心光源效果 */
-            box-shadow: 
-                0 0 20px 5px var(--flame-core),
-                0 -10px 50px 20px var(--flame-outer),
-                0 -30px 100px 40px rgba(255, 100, 0, 0.3); 
-        }
+.chapter-card.active {
+    opacity: 1;
+    border-color: var(--c-accent);
+    background: rgba(40,40,40,0.8);
+    transform: translateY(-5px);
+}
 
-        /* Diptyque 标签 */
-        .label {
-            position: absolute;
-            top: 30%;
-            left: 50%;
-            transform: translate(-50%, -50%) translateZ(61px); /*稍微突出玻璃表面*/
-            width: 60px;
-            height: 80px;
-            background: #fff;
-            border: 1px solid #111;
-            border-radius: 50% / 40%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            text-align: center;
-            font-family: 'Times New Roman', serif;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-            backface-visibility: hidden;
-        }
+.card-title {
+    font-family: var(--font-serif);
+    font-size: 1.2rem;
+    margin-bottom: 0.4rem;
+    color: var(--c-text);
+}
 
-        /* 动画定义 */
-        @keyframes rotateCarousel {
-            from { transform: rotateY(0deg); }
-            to { transform: rotateY(360deg); }
-        }
+.card-mood {
+    font-size: 0.8rem;
+    font-style: italic;
+    color: #aaa;
+    margin-bottom: 0.8rem;
+}
 
-        @keyframes swingReal {
-            0% { transform: rotateX(2deg) rotateZ(-3deg); }
-            100% { transform: rotateX(8deg) rotateZ(3deg); }
-        }
-        /* 影子的摆动幅度稍微小一点，更有层次感 */
-        @keyframes swingShadow {
-            0% { transform: rotateX(0deg) rotateZ(-1deg); }
-            100% { transform: rotateX(4deg) rotateZ(1deg); }
-        }
+.card-notes {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--c-accent);
+    opacity: 0.8;
+}
 
-        @keyframes flicker {
-            0% { transform: scale(1) skewX(1deg); opacity: 0.9; filter: blur(1px); }
-            100% { transform: scale(1.05, 1.1) skewX(-1deg); opacity: 1; filter: blur(2px); }
-        }
+/* HINT */
+.hint-overlay {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 0.7rem;
+    letter-spacing: 2px;
+    opacity: 0;
+    animation: fadeInOut 4s forwards 1s;
+    text-align: center;
+}
 
-        .instruction {
-            position: absolute;
-            bottom: 20px;
-            color: var(--gold-dark);
-            font-family: sans-serif;
-            font-size: 12px;
-            opacity: 0.5;
-            letter-spacing: 2px;
-        }
+#fps-counter {
+    position: absolute;
+    bottom: 10px; right: 10px;
+    font-size: 10px;
+    opacity: 0.3;
+}
 
-    </style>
-</head>
-<body>
+@keyframes fadeInOut {
+    0% { opacity: 0; }
+    20% { opacity: 0.7; }
+    80% { opacity: 0.7; }
+    100% { opacity: 0; }
+}
 
-    <div class="wall-illumination"></div>
-
-    <div class="scene-wrapper" id="scene">
-
-        <div class="shadow-layer">
-            <div class="shadow-assembly" id="shadow-group">
-                </div>
-        </div>
-
-        <div class="carousel-assembly">
-            <div class="turbine"></div>
-            <div id="real-charms-group">
-                </div>
-        </div>
-
-        <div class="candle-jar">
-            <div class="label">
-                <div style="transform: scale(0.7);">
-                    Diptyque<br><span style="font-size:8px">PARIS</span><br><br>BAIES
-                </div>
-            </div>
-            <div class="wax">
-                <div class="wick"></div>
-                <div class="flame"></div>
-            </div>
-        </div>
-
-    </div>
-
-    <div class="instruction">MOVE MOUSE TO INTERACT</div>
-
-    <script>
-        const realCharmsGroup = document.getElementById('real-charms-group');
-        const shadowGroup = document.getElementById('shadow-group');
-        const numberOfCharms = 5; // 吊坠数量
-        const radius = 85; // 实体半径
-
-        for (let i = 0; i < numberOfCharms; i++) {
-            const angle = (i / numberOfCharms) * 360;
-            
-            // --- 1. 创建实体吊坠 ---
-            const charmContainer = document.createElement('div');
-            charmContainer.className = 'charm-container';
-            charmContainer.style.transform = `rotateY(${angle}deg) translateZ(${radius}px)`;
-
-            const string = document.createElement('div');
-            string.className = 'string';
-            
-            const realCharm = document.createElement('div');
-            realCharm.className = 'charm-real';
-
-            charmContainer.appendChild(string);
-            charmContainer.appendChild(realCharm);
-            realCharmsGroup.appendChild(charmContainer);
-
-            // --- 2. 创建对应的影子吊坠 ---
-            // 影子的容器，位置与实体相同（但在 shadow-layer 中会被整体放大后移）
-            const shadowContainer = document.createElement('div');
-            shadowContainer.className = 'charm-container';
-            // 这里的 translateZ 可以稍微大一点点，让影子散开得更开
-            shadowContainer.style.transform = `rotateY(${angle}deg) translateZ(${radius * 1.1}px)`;
-
-            const shadowShape = document.createElement('div');
-            shadowShape.className = 'shadow-charm-shape';
-
-            shadowContainer.appendChild(shadowShape);
-            shadowGroup.appendChild(shadowContainer);
-        }
-
-        // 鼠标互动
-        const scene = document.getElementById('scene');
-        let targetX = 0, targetY = 0;
-        let currentX = 0, currentY = 0;
-
-        document.addEventListener('mousemove', (e) => {
-            targetX = (e.clientX / window.innerWidth) * 2 - 1;
-            targetY = (e.clientY / window.innerHeight) * 2 - 1;
-        });
-
-        // 使用 requestAnimationFrame 使移动更平滑
-        function animateInteraction() {
-            // 简单的缓动效果
-            currentX += (targetX - currentX) * 0.05;
-            currentY += (targetY - currentY) * 0.05;
-
-            const rotateY = currentX * 15; 
-            const rotateX = -currentY * 10;
-
-            scene.style.transform = `rotateY(${rotateY}deg) rotateX(${rotateX}deg)`;
-            requestAnimationFrame(animateInteraction);
-        }
-        animateInteraction();
-
-    </script>
-</body>
-</html>
+@media (max-width: 768px) {
+    .brand { font-size: 0.9rem; }
+    .chapter-card { min-width: 160px; }
+    .ui-layer { padding: 1.5rem 1rem; }
+}
