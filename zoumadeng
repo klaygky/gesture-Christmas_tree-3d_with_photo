@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diptyque Style 3D Carousel</title>
+    <style>
+        :root {
+            --gold-light: #fcf6ba;
+            --gold-mid: #bf953f;
+            --gold-dark: #8a6e2f;
+            --candle-glow: rgba(255, 160, 60, 0.6);
+            --bg-color: #1a1a1a;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+            font-family: 'Times New Roman', serif;
+            perspective: 1000px; /* 3D透视深度 */
+        }
+
+        /* 场景容器 */
+        .scene {
+            width: 300px;
+            height: 400px;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.1s ease-out;
+        }
+
+        /* 走马灯整体结构 */
+        .carousel-assembly {
+            position: absolute;
+            top: 50px;
+            left: 50%;
+            width: 0;
+            height: 0;
+            transform-style: preserve-3d;
+            animation: rotate 12s linear infinite; /* 自动旋转动画 */
+        }
+
+        /* 顶部扇叶 (Turbine) */
+        .turbine {
+            position: absolute;
+            top: -20px;
+            left: -60px;
+            width: 120px;
+            height: 120px;
+            background: radial-gradient(circle, var(--gold-light), var(--gold-mid));
+            border-radius: 50%;
+            transform: rotateX(90deg);
+            box-shadow: 0 0 15px var(--gold-light);
+        }
+
+        /* 吊坠容器 */
+        .charms-container {
+            position: absolute;
+            transform-style: preserve-3d;
+        }
+
+        /* 单个吊坠 (模拟金属挂件) */
+        .charm {
+            position: absolute;
+            top: 0;
+            left: -20px; /* 居中校正 */
+            width: 40px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--gold-mid) 0%, var(--gold-light) 50%, var(--gold-dark) 100%);
+            /* 模拟金属切片形状 */
+            clip-path: polygon(50% 0%, 100% 25%, 80% 100%, 20% 100%, 0% 25%);
+            transform-origin: top center;
+            backface-visibility: visible;
+            box-shadow: 0 0 10px rgba(255, 215, 0, 0.3);
+            /* 物理摆动效果 */
+            animation: swing 3s ease-in-out infinite alternate;
+        }
+
+        /* 连接吊坠的细线 */
+        .string {
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            width: 1px;
+            height: 30px;
+            background: var(--gold-light);
+        }
+
+        /* 中央蜡烛 */
+        .candle-container {
+            position: absolute;
+            bottom: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 100px;
+            height: 140px;
+            background: #fdfcf5;
+            border-radius: 4px;
+            box-shadow: inset 0 -20px 40px rgba(0,0,0,0.1), 0 0 20px rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+        }
+
+        /* Diptyque 标志性的椭圆标签 */
+        .candle-label {
+            margin-top: 30px;
+            width: 60px;
+            height: 80px;
+            border: 1px solid #000;
+            border-radius: 50% / 40%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 10px;
+            text-align: center;
+            background: #fff;
+            box-shadow: 0 0 5px rgba(0,0,0,0.1);
+        }
+
+        /* 烛火 */
+        .flame {
+            position: absolute;
+            top: -25px;
+            width: 14px;
+            height: 30px;
+            background: radial-gradient(ellipse at bottom, #ffff00 0%, #ff8c00 60%, transparent 100%);
+            border-radius: 50% 50% 20% 20%;
+            filter: blur(2px);
+            animation: flicker 0.1s infinite alternate;
+            box-shadow: 0 0 40px 10px var(--candle-glow);
+        }
+
+        /* 地面反射/阴影 */
+        .reflection {
+            position: absolute;
+            bottom: -50px;
+            left: 50%;
+            transform: translateX(-50%) rotateX(90deg);
+            width: 200px;
+            height: 200px;
+            background: radial-gradient(circle, rgba(255,200,100,0.2) 0%, transparent 70%);
+            filter: blur(10px);
+        }
+
+        /* 动画定义 */
+        @keyframes rotate {
+            from { transform: rotateY(0deg); }
+            to { transform: rotateY(360deg); }
+        }
+
+        @keyframes swing {
+            0% { transform: rotateX(0deg) rotateZ(-2deg); }
+            100% { transform: rotateX(5deg) rotateZ(2deg); }
+        }
+
+        @keyframes flicker {
+            0% { transform: scale(1); opacity: 0.9; }
+            100% { transform: scale(1.1, 1.05); opacity: 1; }
+        }
+
+        /* 文本样式 */
+        h1 {
+            position: absolute;
+            bottom: 20px;
+            color: var(--gold-mid);
+            font-weight: lighter;
+            letter-spacing: 5px;
+            text-transform: uppercase;
+            font-size: 14px;
+            opacity: 0.8;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="scene" id="scene">
+        <div class="carousel-assembly">
+            <div class="turbine"></div>
+            <div id="charms-group"></div>
+        </div>
+
+        <div class="candle-container">
+            <div class="flame"></div>
+            <div class="candle-label">
+                <div style="transform: scale(0.8);">
+                    Diptyque<br>
+                    <span style="font-size:8px">PARIS</span><br>
+                    <br>BAIES
+                </div>
+            </div>
+        </div>
+
+        <div class="reflection"></div>
+    </div>
+
+    <h1>Interactive Carousel</h1>
+
+    <script>
+        const charmsGroup = document.getElementById('charms-group');
+        const numberOfCharms = 5; // 吊坠数量
+        const radius = 90; // 半径
+
+        // 1. 动态生成吊坠并排列成圆圈
+        for (let i = 0; i < numberOfCharms; i++) {
+            const angle = (i / numberOfCharms) * 360;
+            
+            // 创建容器来定位角度
+            const charmContainer = document.createElement('div');
+            charmContainer.className = 'charms-container';
+            
+            // 计算位置：利用 rotateY 旋转角度，然后 translateZ 推向外圈
+            charmContainer.style.transform = `rotateY(${angle}deg) translateZ(${radius}px)`;
+
+            // 创建线
+            const string = document.createElement('div');
+            string.className = 'string';
+            
+            // 创建吊坠本体
+            const charm = document.createElement('div');
+            charm.className = 'charm';
+
+            charmContainer.appendChild(string);
+            charmContainer.appendChild(charm);
+            charmsGroup.appendChild(charmContainer);
+        }
+
+        // 2. 鼠标互动逻辑
+        const scene = document.getElementById('scene');
+        let mouseX = 0;
+        let mouseY = 0;
+
+        document.addEventListener('mousemove', (e) => {
+            // 计算鼠标相对于屏幕中心的偏移量 (-1 到 1)
+            const x = (e.clientX / window.innerWidth) * 2 - 1;
+            const y = (e.clientY / window.innerHeight) * 2 - 1;
+
+            // 限制旋转角度，使其看起来自然
+            const rotateY = x * 20; // 左右轻微旋转
+            const rotateX = -y * 15; // 上下轻微俯仰
+
+            // 应用到场景容器
+            scene.style.transform = `rotateY(${rotateY}deg) rotateX(${rotateX}deg)`;
+        });
+
+        // 3. 移动端触摸支持 (简单的触摸跟随)
+        document.addEventListener('touchmove', (e) => {
+            const touch = e.touches[0];
+            const x = (touch.clientX / window.innerWidth) * 2 - 1;
+            const y = (touch.clientY / window.innerHeight) * 2 - 1;
+            scene.style.transform = `rotateY(${x * 20}deg) rotateX(${-y * 15}deg)`;
+        });
+
+    </script>
+</body>
+</html>
