@@ -1,593 +1,885 @@
-import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Maison du Sillage - Interactive Demo</title>
+    <style>
+        :root {
+            --gold: #d4af37;
+            --gold-dim: #8a702a;
+            --dark: #0a0a0a;
+            --text-main: #e0e0e0;
+            --serif: "Georgia", "Times New Roman", Times, serif;
+            --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
 
-/**
- * CONFIGURATION
- * Centralized settings for easy tuning.
- */
-const CONFIG = {
-    chapters: [
-        { name: "Rose Nocturne", mood: "Velvet shadows", notes: "Rose / Patchouli / Oud", lightColor: 0xffdcb1, patternSeed: 0 },
-        { name: "Amber Lace", mood: "Golden hour", notes: "Amber / Vanilla / Musk", lightColor: 0xffeebb, patternSeed: 1 },
-        { name: "Verde Figuier", mood: "Morning dew", notes: "Fig / Cedar / Green", lightColor: 0xeefce6, patternSeed: 2 },
-        { name: "Spice Route", mood: "Warm bazaar", notes: "Cinnamon / Ginger / Wood", lightColor: 0xffcfa0, patternSeed: 3 },
-        { name: "Lunar Iris", mood: "Cold elegance", notes: "Iris / Violet / Leather", lightColor: 0xeef4ff, patternSeed: 4 }
-    ],
-    rotation: { baseSpeed: Math.PI / 14, dragFactor: 0.005, damping: 0.95, returnLerp: 0.02 },
-    shadows: {
-        mapSize: window.innerWidth < 768 ? 1024 : 2048,
-        bias: -0.0001, 
-        radius: 4, 
-        blur: 2 // VSM blur
-    },
-    bloom: { strength: 0.35, radius: 0.4, threshold: 0.85 },
-    flame: { flickerSpeed: 8.0, baseIntensity: 45 },
-    camera: { pos: new THREE.Vector3(0, 1.25, 5.5), lookAt: new THREE.Vector3(0, 0.9, 0) }
-};
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--dark);
+            overflow: hidden;
+            font-family: var(--sans);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
 
-/**
- * STATE MANAGEMENT
- */
-const STATE = {
-    isLit: true,
-    isPaused: false,
-    chapterIndex: 0,
-    rotationY: 0,
-    velocity: 0,
-    isDragging: false,
-    lastMouseX: 0,
-    time: 0
-};
+        /* Canvas container */
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+            cursor: grab;
+        }
+        #canvas-container:active {
+            cursor: grabbing;
+        }
 
-// --- GLOBALS ---
-let scene, camera, renderer, composer;
-let candleGroup, carouselGroup, flameMesh, wickLight, backdrop;
-let charms = []; // Array of mesh references
-const clock = new THREE.Clock();
+        /* Film Grain Overlay */
+        .grain-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+            opacity: 0.04;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+        }
 
-/**
- * INITIALIZATION
- */
-function init() {
-    const container = document.getElementById('canvas-container');
+        /* UI Layer */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 20;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 2rem;
+            box-sizing: border-box;
+            color: var(--text-main);
+        }
 
-    // 1. Scene & Camera
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x050505);
-    scene.fog = new THREE.FogExp2(0x050505, 0.08); // Deep atmosphere
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            pointer-events: auto;
+        }
 
-    camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 20);
-    camera.position.copy(CONFIG.camera.pos);
-    camera.lookAt(CONFIG.camera.lookAt);
+        .brand {
+            font-family: var(--serif);
+            letter-spacing: 0.05em;
+        }
+        .brand h1 {
+            font-size: 1.8rem;
+            margin: 0;
+            font-weight: 400;
+            color: #fff;
+        }
+        .brand p {
+            font-size: 0.85rem;
+            margin: 0.3rem 0 0 0.2rem;
+            color: var(--gold);
+            font-style: italic;
+            opacity: 0.8;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
 
-    // 2. Renderer
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.VSMShadowMap; // Soft shadows
-    container.appendChild(renderer.domElement);
+        /* Controls */
+        .controls {
+            display: flex;
+            gap: 1.5rem;
+        }
+        
+        button {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.2);
+            color: var(--text-main);
+            padding: 0.6rem 1.2rem;
+            font-family: var(--sans);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            cursor: pointer;
+            transition: all 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            border-radius: 2px;
+        }
+        button:hover {
+            border-color: var(--gold);
+            color: var(--gold);
+        }
+        button.active {
+            background: rgba(212, 175, 55, 0.1);
+            border-color: var(--gold);
+            color: var(--gold);
+        }
 
-    // 3. Post-Processing
-    const renderScene = new RenderPass(scene, camera);
-    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
-    bloomPass.strength = CONFIG.bloom.strength;
-    bloomPass.radius = CONFIG.bloom.radius;
-    bloomPass.threshold = CONFIG.bloom.threshold;
+        /* Footer / Chapters */
+        footer {
+            pointer-events: auto;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
 
-    composer = new EffectComposer(renderer);
-    composer.addPass(renderScene);
-    composer.addPass(bloomPass);
+        .chapter-title {
+            text-align: center;
+            margin-bottom: 1rem;
+            opacity: 0; 
+            transform: translateY(10px);
+            transition: opacity 0.8s ease, transform 0.8s ease;
+        }
+        .chapter-title.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        .chapter-title h2 {
+            font-family: var(--serif);
+            font-weight: 400;
+            font-size: 2rem;
+            margin: 0;
+            color: #fff;
+        }
+        .chapter-title p {
+            font-size: 0.9rem;
+            color: var(--gold);
+            margin: 0.5rem 0 0 0;
+            font-style: italic;
+        }
 
-    // 4. Build Scene
-    createLighting();
-    createBackdrop();
-    createCandle();
-    createCarousel();
+        .carousel-nav {
+            display: flex;
+            gap: 2rem;
+            overflow-x: auto;
+            padding: 1rem 2rem;
+            max-width: 100%;
+            scrollbar-width: none; /* Firefox */
+            -ms-overflow-style: none;  /* IE */
+        }
+        .carousel-nav::-webkit-scrollbar { display: none; }
 
-    // 5. UI & Events
-    createUI();
-    attachEvents();
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+            opacity: 0.5;
+            transition: opacity 0.5s ease, transform 0.5s ease;
+            min-width: 60px;
+        }
+        .nav-item:hover {
+            opacity: 0.8;
+            transform: translateY(-2px);
+        }
+        .nav-item.selected {
+            opacity: 1;
+            transform: translateY(-4px);
+        }
+        .nav-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: #fff;
+            transition: background-color 0.3s;
+        }
+        .nav-item.selected .nav-dot {
+            background-color: var(--gold);
+            box-shadow: 0 0 8px var(--gold-dim);
+        }
+        .nav-label {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
 
-    // Remove Loader
-    document.getElementById('loader').style.opacity = 0;
+        /* Mobile Adjustments */
+        @media (max-width: 768px) {
+            #ui-layer { padding: 1.5rem; }
+            .brand h1 { font-size: 1.4rem; }
+            .chapter-title h2 { font-size: 1.5rem; }
+            .carousel-nav { gap: 1.5rem; }
+        }
+        
+        /* Loading Overlay */
+        #loader {
+            position: absolute;
+            top:0; left:0; width:100%; height:100%;
+            background: #000;
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: var(--gold);
+            font-family: var(--serif);
+            font-style: italic;
+            transition: opacity 1s ease;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
 
-    // Start Loop
-    animate();
-}
+    <div id="loader">Initializing Experience...</div>
 
-/**
- * SCENE BUILDERS
- */
-function createLighting() {
-    // Ambient fill
-    const ambient = new THREE.HemisphereLight(0xffffff, 0x000000, 0.15);
-    scene.add(ambient);
+    <div class="grain-overlay"></div>
 
-    // Rim light (Back)
-    const rim = new THREE.DirectionalLight(0xffffff, 0.2);
-    rim.position.set(0, 2, -5);
-    scene.add(rim);
+    <div id="ui-layer">
+        <header>
+            <div class="brand">
+                <h1>Maison du Sillage</h1>
+                <p>A Whirl of Light</p>
+            </div>
+            <div class="controls">
+                <button id="btn-light">Ignite</button>
+            </div>
+        </header>
 
-    // HERO LIGHT: The Flame
-    wickLight = new THREE.PointLight(CONFIG.chapters[0].lightColor, 0, 10);
-    wickLight.position.set(0, 0.65, 0); // Just above wick
-    wickLight.castShadow = true;
-    wickLight.shadow.mapSize.width = CONFIG.shadows.mapSize;
-    wickLight.shadow.mapSize.height = CONFIG.shadows.mapSize;
-    wickLight.shadow.bias = CONFIG.shadows.bias;
-    wickLight.shadow.radius = CONFIG.shadows.radius;
-    wickLight.shadow.blurSamples = 8; // VSM specific
-    
-    // Physical light unit approx
-    wickLight.power = 0; // Starts off
-    
-    scene.add(wickLight);
-}
+        <footer>
+            <div id="chapter-text" class="chapter-title">
+                <h2 id="chap-name">Rose</h2>
+                <p id="chap-desc">A garden at midnight.</p>
+            </div>
+            <div class="carousel-nav" id="chapter-nav">
+                </div>
+        </footer>
+    </div>
 
-function createBackdrop() {
-    // Curved wall behind
-    const geo = new THREE.CylinderGeometry(6, 6, 5, 64, 1, true, Math.PI, Math.PI); 
-    // Theta adjusted to face camera: rotate geometry
-    geo.rotateY(-Math.PI / 2);
+    <div id="canvas-container"></div>
 
-    const mat = new THREE.MeshStandardMaterial({
-        color: 0xeeeeee,
-        roughness: 0.9,
-        metalness: 0,
-        side: THREE.BackSide // Inside of cylinder
-    });
-
-    backdrop = new THREE.Mesh(geo, mat);
-    backdrop.position.set(0, 1.0, -1.8);
-    backdrop.receiveShadow = true;
-    scene.add(backdrop);
-}
-
-function createCandle() {
-    candleGroup = new THREE.Group();
-
-    // 1. Glass Jar
-    const jarGeo = new THREE.CylinderGeometry(0.75, 0.75, 1.1, 48);
-    const jarMat = new THREE.MeshPhysicalMaterial({
-        color: 0xfffcf0,
-        transmission: 0.9, // Glass
-        opacity: 1,
-        metalness: 0,
-        roughness: 0.15,
-        ior: 1.5,
-        thickness: 0.1,
-        specularIntensity: 1,
-        transparent: true,
-        side: THREE.DoubleSide
-    });
-    const jar = new THREE.Mesh(jarGeo, jarMat);
-    jar.position.y = 0.55;
-    jar.castShadow = false;
-    jar.receiveShadow = true; // Shadows on glass look nice
-    candleGroup.add(jar);
-
-    // 2. Wax
-    const waxGeo = new THREE.CylinderGeometry(0.68, 0.68, 0.75, 32);
-    const waxMat = new THREE.MeshStandardMaterial({
-        color: 0xfaf5e6, // Warm ivory
-        roughness: 0.3,
-        metalness: 0.0
-    });
-    const wax = new THREE.Mesh(waxGeo, waxMat);
-    wax.position.y = 0.4; // Inside jar
-    wax.receiveShadow = true;
-    candleGroup.add(wax);
-
-    // 3. Wick
-    const wickGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.15, 8);
-    const wickMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
-    const wick = new THREE.Mesh(wickGeo, wickMat);
-    wick.position.y = 0.75 + 0.075;
-    wick.castShadow = true;
-    candleGroup.add(wick);
-
-    // 4. Flame (Shader)
-    const flameGeo = new THREE.PlaneGeometry(0.18, 0.35);
-    // Move anchor to bottom
-    flameGeo.translate(0, 0.175, 0); 
-    
-    const flameMat = new THREE.ShaderMaterial({
-        uniforms: {
-            uTime: { value: 0 },
-            uColorCore: { value: new THREE.Color(0xfffeba) },
-            uColorTop: { value: new THREE.Color(0xffa24c) }
-        },
-        vertexShader: `
-            uniform float uTime;
-            varying vec2 vUv;
-            void main() {
-                vUv = uv;
-                vec3 pos = position;
-                // Billboard
-                vec4 mvPosition = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-                
-                // Wind/Flicker effect
-                float n = sin(uTime * 10.0 + pos.y * 10.0) * 0.02 * pos.y;
-                pos.x += n;
-                
-                // Scale based on distance to keep size constant-ish or just billboard
-                gl_Position = projectionMatrix * (mvPosition + vec4(pos.x, pos.y, 0.0, 0.0));
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
             }
-        `,
-        fragmentShader: `
-            uniform float uTime;
-            uniform vec3 uColorCore;
-            uniform vec3 uColorTop;
-            varying vec2 vUv;
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+        // --- CONFIGURATION ---
+        const CONFIG = {
+            chapters: [
+                { name: "Rose", desc: "Velvet petals in the moonlight.", color: 0xffe0e0, pattern: "rose" },
+                { name: "Figuier", desc: "Warm bark and fresh green sap.", color: 0xe0ffea, pattern: "fig" },
+                { name: "Ambre", desc: "Spicy resin and ancient gold.", color: 0xffdcb0, pattern: "amber" },
+                { name: "Baies", desc: "Blackcurrant berries and roses.", color: 0xe8e0ff, pattern: "baies" },
+                { name: "Feu de Bois", desc: "Crackling embers of winter.", color: 0xffd0a0, pattern: "wood" }
+            ],
+            shadowSize: Math.min(window.innerWidth > 800 ? 2048 : 1024, 2048),
+            bloomStrength: 0.35,
+            bloomRadius: 0.8,
+            bloomThreshold: 0.85,
+            rotationSpeed: 0.003,
+            dragInertia: 0.96,
+            flameColorCore: new THREE.Color(0xffaa33),
+            flameColorOuter: new THREE.Color(0xff4400),
+            goldColor: 0xffd700,
+        };
+
+        // --- STATE ---
+        const state = {
+            isLit: false,
+            currentChapterIndex: 0,
+            rotationVelocity: 0,
+            isDragging: false,
+            lastPointerX: 0,
+            autoRotation: true,
+            time: 0
+        };
+
+        // --- SCENE GLOBALS ---
+        let scene, camera, renderer, composer;
+        let flameLight, flameMesh, wickMesh, glowMesh;
+        let carouselGroup, charmsGroup;
+        let wallMesh;
+        const clock = new THREE.Clock();
+
+        // --- INIT ---
+        function init() {
+            const container = document.getElementById('canvas-container');
+
+            // 1. Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.0;
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputColorSpace = THREE.SRGBColorSpace;
+            container.appendChild(renderer.domElement);
+
+            // 2. Camera
+            camera = new THREE.PerspectiveCamera(40, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.position.set(0, 3, 7);
+            camera.lookAt(0, 0.5, 0);
+
+            // 3. Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x050505, 0.02);
+
+            // 4. Lights
+            // Ambient (Fill) - very dark
+            const ambient = new THREE.HemisphereLight(0x222222, 0x000000, 0.5);
+            scene.add(ambient);
+
+            // Flame Light (The Projection Source)
+            flameLight = new THREE.PointLight(0xffa95c, 0, 15);
+            flameLight.position.set(0, 0.65, 0);
+            flameLight.castShadow = true;
+            flameLight.shadow.mapSize.width = CONFIG.shadowSize;
+            flameLight.shadow.mapSize.height = CONFIG.shadowSize;
+            flameLight.shadow.bias = -0.0001;
+            flameLight.shadow.radius = 2; // Soft edges
+            scene.add(flameLight);
+
+            // Subtle Rim Light for separation
+            const rimLight = new THREE.SpotLight(0x445577, 2);
+            rimLight.position.set(0, 5, -5);
+            rimLight.lookAt(0,0,0);
+            scene.add(rimLight);
+
+            // 5. Build Objects
+            buildEnvironment();
+            buildCandle();
             
-            // Simple noise
-            float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
+            // Initial Carousel
+            carouselGroup = new THREE.Group();
+            scene.add(carouselGroup);
+            loadChapter(0, false);
 
-            void main() {
-                // Shape: Teardrop
-                float x = vUv.x * 2.0 - 1.0;
-                float y = vUv.y;
-                float shape = 1.0 - length(vec2(x, (y - 0.2) * 1.5));
-                
-                // Noise texture
-                float noise = random(vUv * vec2(10.0, 50.0) + uTime);
-                
-                // Gradient
-                vec3 color = mix(uColorCore, uColorTop, y * 1.5);
-                
-                // Alpha fade
-                float alpha = smoothstep(0.0, 0.1, shape) * (1.0 - y*0.1);
-                
-                // Flicker modulation
-                float flicker = 0.8 + 0.2 * sin(uTime * 20.0);
-                
-                if (alpha < 0.01) discard;
-                
-                gl_FragColor = vec4(color * flicker * 2.0, alpha); // *2.0 for bloom
+            // 6. Post Processing
+            const renderScene = new RenderPass(scene, camera);
+            const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+            bloomPass.threshold = CONFIG.bloomThreshold;
+            bloomPass.strength = CONFIG.bloomStrength;
+            bloomPass.radius = CONFIG.bloomRadius;
+
+            composer = new EffectComposer(renderer);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+
+            // 7. Events
+            window.addEventListener('resize', onResize);
+            setupInteractions();
+            setupUI();
+
+            // Reveal
+            document.getElementById('loader').style.opacity = '0';
+            setTimeout(() => {
+                document.getElementById('loader').style.display = 'none';
+                document.querySelector('.chapter-title').classList.add('visible');
+            }, 1000);
+
+            // Start Loop
+            animate();
+        }
+
+        // --- GEOMETRY BUILDERS ---
+
+        function buildEnvironment() {
+            // Curved Wall
+            const wallGeo = new THREE.CylinderGeometry(6, 6, 12, 64, 1, true, Math.PI * 0.8, Math.PI * 1.4);
+            const wallMat = new THREE.MeshStandardMaterial({
+                color: 0xeae6d8,
+                roughness: 0.9,
+                side: THREE.BackSide
+            });
+            wallMesh = new THREE.Mesh(wallGeo, wallMat);
+            wallMesh.scale.x = -1; // Invert to face center
+            wallMesh.position.z = 2;
+            wallMesh.receiveShadow = true;
+            scene.add(wallMesh);
+
+            // Floor (Dark Reflection)
+            const floorGeo = new THREE.PlaneGeometry(20, 20);
+            const floorMat = new THREE.MeshStandardMaterial({
+                color: 0x050505,
+                roughness: 0.2,
+                metalness: 0.5
+            });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = -1;
+            floor.receiveShadow = true;
+            scene.add(floor);
+        }
+
+        function buildCandle() {
+            const candleGroup = new THREE.Group();
+            
+            // Glass Container
+            const glassGeo = new THREE.CylinderGeometry(0.8, 0.8, 2, 64);
+            const glassMat = new THREE.MeshPhysicalMaterial({
+                color: 0xffffff,
+                metalness: 0,
+                roughness: 0.1,
+                transmission: 0.95, // Glass
+                thickness: 0.1,
+                clearcoat: 1.0,
+                transparent: true,
+                side: THREE.DoubleSide
+            });
+            const glass = new THREE.Mesh(glassGeo, glassMat);
+            glass.castShadow = true; // Glass casts shadow too (caustics simulated by transmission)
+            candleGroup.add(glass);
+
+            // Wax (Inside)
+            const waxGeo = new THREE.CylinderGeometry(0.75, 0.75, 1.5, 32);
+            const waxMat = new THREE.MeshStandardMaterial({
+                color: 0xfdf8e4,
+                roughness: 0.6,
+                metalness: 0.1
+            });
+            const wax = new THREE.Mesh(waxGeo, waxMat);
+            wax.position.y = -0.2;
+            wax.receiveShadow = true;
+            candleGroup.add(wax);
+
+            // Wick
+            const wickGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.4, 8);
+            const wickMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 1 });
+            wickMesh = new THREE.Mesh(wickGeo, wickMat);
+            wickMesh.position.y = 0.55;
+            candleGroup.add(wickMesh);
+
+            // Flame (Procedural Shader)
+            const flameGeo = new THREE.PlaneGeometry(0.35, 0.6);
+            flameGeo.translate(0, 0.3, 0); // Pivot at bottom
+            
+            const flameShader = {
+                uniforms: {
+                    uTime: { value: 0 },
+                    uColorCore: { value: CONFIG.flameColorCore },
+                    uColorOuter: { value: CONFIG.flameColorOuter },
+                    uOpacity: { value: 0.0 } // Starts off
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+                    uniform float uTime;
+                    void main() {
+                        vUv = uv;
+                        vec3 pos = position;
+                        // Simple wind/flicker
+                        float flicker = sin(uTime * 10.0 + position.y * 5.0) * 0.02 * position.y;
+                        pos.x += flicker;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    varying vec2 vUv;
+                    uniform vec3 uColorCore;
+                    uniform vec3 uColorOuter;
+                    uniform float uOpacity;
+                    
+                    // Simple noise function
+                    float hash(float n) { return fract(sin(n) * 43758.5453123); }
+
+                    void main() {
+                        if(uOpacity < 0.01) discard;
+
+                        vec2 center = vec2(0.5, 0.2);
+                        float dist = distance(vUv, center);
+                        
+                        // Shape mask (teardrop)
+                        float shape = 1.0 - smoothstep(0.0, 0.5, dist * vec2(1.0, 0.5 + vUv.y).x * 2.5);
+                        
+                        // Core glow
+                        float core = 1.0 - smoothstep(0.0, 0.15, dist);
+                        
+                        vec3 color = mix(uColorOuter, uColorCore, core);
+                        
+                        // Bottom transparency fade
+                        float alpha = shape * uOpacity;
+                        alpha *= smoothstep(0.0, 0.1, vUv.y);
+
+                        gl_FragColor = vec4(color, alpha);
+                    }
+                `,
+                side: THREE.DoubleSide,
+                transparent: true,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            };
+
+            const flameMat = new THREE.ShaderMaterial(flameShader);
+            flameMesh = new THREE.Mesh(flameGeo, flameMat);
+            flameMesh.position.y = 0.65;
+            flameMesh.rotation.y = Math.PI / 4; // Face camera roughly
+            flameMesh.visible = false;
+            candleGroup.add(flameMesh);
+
+            // Interaction Hitbox
+            const hitbox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial({visible:false}));
+            hitbox.position.y = 1;
+            hitbox.name = "candle_hitbox";
+            candleGroup.add(hitbox);
+
+            scene.add(candleGroup);
+        }
+
+        function createPatternedShape(type) {
+            const shape = new THREE.Shape();
+            // Oval Base
+            shape.absellipse(0, 0, 0.5, 0.8, 0, Math.PI * 2, false, 0);
+
+            // Procedural Holes
+            const holeCount = 12;
+            
+            if (type === 'rose') {
+                // Swirls
+                for(let i=0; i<5; i++) {
+                    const hole = new THREE.Path();
+                    const angle = (i/5) * Math.PI * 2;
+                    const r = 0.25;
+                    hole.absellipse(Math.cos(angle)*r, Math.sin(angle)*r, 0.08, 0.15, angle, angle + Math.PI*2);
+                    shape.holes.push(hole);
+                }
+            } else if (type === 'wood') {
+                // Vertical jagged lines
+                for(let i=-2; i<=2; i++) {
+                    if(i===0) continue;
+                    const hole = new THREE.Path();
+                    const x = i * 0.12;
+                    hole.moveTo(x, -0.4);
+                    hole.lineTo(x + 0.02, 0);
+                    hole.lineTo(x, 0.4);
+                    hole.lineTo(x - 0.04, 0.4);
+                    hole.lineTo(x - 0.02, 0);
+                    hole.lineTo(x - 0.04, -0.4);
+                    shape.holes.push(hole);
+                }
+            } else if (type === 'baies') {
+                // Clusters of dots
+                for(let i=0; i<15; i++) {
+                    const hole = new THREE.Path();
+                    const r = Math.random() * 0.35;
+                    const theta = Math.random() * Math.PI * 2;
+                    hole.absarc(Math.cos(theta)*r, Math.sin(theta)*r, 0.03 + Math.random()*0.04, 0, Math.PI*2);
+                    shape.holes.push(hole);
+                }
+            } else if (type === 'fig') {
+                // Leaf-like cutout
+                const hole = new THREE.Path();
+                hole.moveTo(0, -0.5);
+                hole.quadraticCurveTo(0.3, -0.2, 0, 0.5);
+                hole.quadraticCurveTo(-0.3, -0.2, 0, -0.5);
+                shape.holes.push(hole);
+            } else {
+                // Amber/Stars
+                for(let i=0; i<8; i++) {
+                    const hole = new THREE.Path();
+                    const r = 0.15 + (i%2)*0.2;
+                    const angle = (i/8)*Math.PI*2;
+                    hole.absellipse(Math.cos(angle)*r, Math.sin(angle)*r, 0.05, 0.05, 0, Math.PI*2);
+                    shape.holes.push(hole);
+                }
             }
-        `,
-        transparent: true,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending
-    });
-
-    flameMesh = new THREE.Mesh(flameGeo, flameMat);
-    flameMesh.position.y = 0.82;
-    flameMesh.visible = STATE.isLit;
-    candleGroup.add(flameMesh);
-
-    scene.add(candleGroup);
-}
-
-function createCarousel() {
-    carouselGroup = new THREE.Group();
-    carouselGroup.position.y = 1.55;
-    
-    // Gold Material
-    const goldMat = new THREE.MeshPhysicalMaterial({
-        color: 0xffd700,
-        metalness: 1.0,
-        roughness: 0.25,
-        clearcoat: 0.5,
-        clearcoatRoughness: 0.1
-    });
-
-    // 1. Top Ring
-    const ringGeo = new THREE.TorusGeometry(1.05, 0.04, 16, 64);
-    ringGeo.rotateX(Math.PI / 2);
-    const ring = new THREE.Mesh(ringGeo, goldMat);
-    ring.castShadow = true;
-    carouselGroup.add(ring);
-
-    // 2. Charms
-    const count = 5;
-    const radius = 1.05;
-
-    for (let i = 0; i < count; i++) {
-        const angle = (i / count) * Math.PI * 2;
-        
-        // Pivot point for the charm
-        const pivot = new THREE.Group();
-        pivot.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
-        // Rotate pivot so charm faces center (or tangent)
-        pivot.rotation.y = -angle + Math.PI / 2;
-        
-        // Rod
-        const rodGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.4);
-        const rod = new THREE.Mesh(rodGeo, goldMat);
-        rod.position.y = -0.2;
-        pivot.add(rod);
-
-        // The Charm (Procedural Texture)
-        const w = 0.5, h = 0.7;
-        const charmGeo = new THREE.PlaneGeometry(w, h);
-        
-        // Generate texture for current chapter
-        const texture = generateCharmTexture(CONFIG.chapters[0].patternSeed);
-        
-        const charmMat = new THREE.MeshStandardMaterial({
-            color: 0xffd700,
-            metalness: 0.9,
-            roughness: 0.3,
-            map: texture,
-            alphaMap: texture,
-            transparent: true,
-            alphaTest: 0.4, // CRITICAL for shadows
-            side: THREE.DoubleSide,
-        });
-
-        const charm = new THREE.Mesh(charmGeo, charmMat);
-        
-        // CRITICAL: Custom Depth Material for accurate shadow casting through alpha
-        charm.customDepthMaterial = new THREE.MeshDepthMaterial({
-            depthPacking: THREE.RGBADepthPacking,
-            map: texture,
-            alphaTest: 0.4
-        });
-
-        charm.position.y = -0.6; // Below rod
-        pivot.add(charm);
-        
-        charms.push(charm); // Store ref to update texture later
-        carouselGroup.add(pivot);
-    }
-
-    scene.add(carouselGroup);
-}
-
-/**
- * PROCEDURAL ASSETS
- */
-function generateCharmTexture(seed) {
-    const size = 1024;
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-
-    // Clear transparent
-    ctx.clearRect(0, 0, size, size);
-
-    // Helpers
-    const cx = size / 2;
-    const cy = size / 2;
-    
-    ctx.fillStyle = '#FFFFFF';
-    ctx.strokeStyle = '#FFFFFF';
-    ctx.lineWidth = 20;
-    ctx.lineCap = 'round';
-
-    // 1. Oval Border (Always present)
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, 300, 450, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    // 2. Pattern based on Seed
-    ctx.beginPath();
-    
-    if (seed === 0) { // Rose: Swirls
-        for(let i=0; i<8; i++) {
-            const rad = 200;
-            const a = (i/8)*Math.PI*2;
-            const x = cx + Math.cos(a)*rad;
-            const y = cy + Math.sin(a)*rad;
-            ctx.moveTo(cx, cy);
-            ctx.quadraticCurveTo(x, y, x + Math.random()*50, y + Math.random()*50);
+            return shape;
         }
-    } else if (seed === 1) { // Amber: Lace/Grid
-        ctx.lineWidth = 10;
-        for(let x=cx-300; x<cx+300; x+=60) {
-            ctx.moveTo(x, cy-450); ctx.lineTo(x, cy+450);
+
+        function loadChapter(index, animated = true) {
+            state.currentChapterIndex = index;
+            const data = CONFIG.chapters[index];
+
+            // 1. Build New Carousel Geometry
+            if (charmsGroup) {
+                // If animated, fade out old one, then remove
+                const oldGroup = charmsGroup;
+                // Simple fade out via scale/opacity logic would be here
+                // For simplicity in single file: remove immediately, but we will animate the transition "feeling" via lights
+                scene.remove(oldGroup);
+                oldGroup.traverse(o => {
+                    if(o.geometry) o.geometry.dispose();
+                    if(o.material) o.material.dispose();
+                });
+            }
+
+            charmsGroup = new THREE.Group();
+            charmsGroup.position.y = 2.8; // Height above candle
+
+            // Gold Material
+            const goldMat = new THREE.MeshPhysicalMaterial({
+                color: CONFIG.goldColor,
+                metalness: 1.0,
+                roughness: 0.25,
+                clearcoat: 0.5,
+                side: THREE.DoubleSide
+            });
+
+            // Hub
+            const hubGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.2, 16);
+            const hub = new THREE.Mesh(hubGeo, goldMat);
+            charmsGroup.add(hub);
+
+            // Spokes & Charms
+            const numCharms = 5;
+            const radius = 1.2;
+            
+            for(let i=0; i<numCharms; i++) {
+                const angle = (i / numCharms) * Math.PI * 2;
+                
+                // Spoke
+                const spokeGeo = new THREE.CylinderGeometry(0.02, 0.02, radius, 8);
+                spokeGeo.rotateZ(Math.PI / 2);
+                spokeGeo.translate(radius/2, 0, 0);
+                const spoke = new THREE.Mesh(spokeGeo, goldMat);
+                spoke.rotation.y = angle;
+                charmsGroup.add(spoke);
+
+                // Charm Geometry (Extruded Shape)
+                const shape = createPatternedShape(data.pattern);
+                const charmGeo = new THREE.ExtrudeGeometry(shape, {
+                    depth: 0.02,
+                    bevelEnabled: true,
+                    bevelThickness: 0.01,
+                    bevelSize: 0.01,
+                    bevelSegments: 2
+                });
+                // Center geometry
+                charmGeo.center();
+                
+                const charm = new THREE.Mesh(charmGeo, goldMat);
+                // Position at end of spoke, hanging down
+                charm.position.set(Math.cos(angle)*radius, -0.6, Math.sin(angle)*radius);
+                // Slight rotation to face outward/tangent
+                charm.rotation.y = angle + Math.PI/2;
+                charm.castShadow = true;
+                charm.receiveShadow = true;
+                
+                // Add a tiny ring connector
+                const ring = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.01, 8, 16), goldMat);
+                ring.position.set(Math.cos(angle)*radius, 0, Math.sin(angle)*radius);
+                ring.rotation.y = angle;
+                
+                charmsGroup.add(ring);
+                charmsGroup.add(charm);
+            }
+
+            carouselGroup.add(charmsGroup);
+            
+            // Initial animation pop-in
+            charmsGroup.scale.set(0,0,0);
+            
+            // Animation loop handles scale lerp
+            state.targetScale = 1; 
+
+            // Update UI
+            updateUI(index);
         }
-        for(let y=cy-450; y<cy+450; y+=60) {
-            ctx.moveTo(cx-300, y); ctx.lineTo(cx+300, y);
+
+        // --- INTERACTION LOGIC ---
+
+        function toggleLight() {
+            state.isLit = !state.isLit;
+            const btn = document.getElementById('btn-light');
+            
+            if(state.isLit) {
+                btn.textContent = "Extinguish";
+                btn.classList.add('active');
+                flameMesh.visible = true;
+                // Light Ramp Up handled in animate
+            } else {
+                btn.textContent = "Ignite";
+                btn.classList.remove('active');
+                // Light Ramp Down handled in animate
+            }
         }
-    } else if (seed === 2) { // Figuier: Leaf veins
-        ctx.moveTo(cx, cy+450); ctx.lineTo(cx, cy-450); // Spine
-        for(let i=0; i<10; i++) {
-            const y = (cy-400) + i*80;
-            ctx.moveTo(cx, y); ctx.lineTo(cx-250, y-100);
-            ctx.moveTo(cx, y); ctx.lineTo(cx+250, y-100);
+
+        function setupInteractions() {
+            const container = document.getElementById('canvas-container');
+            
+            // Mouse/Touch Drag
+            const onDown = (x) => {
+                state.isDragging = true;
+                state.lastPointerX = x;
+                state.autoRotation = false;
+            };
+            const onMove = (x) => {
+                if(!state.isDragging) return;
+                const delta = x - state.lastPointerX;
+                state.rotationVelocity += delta * 0.01; // Sensitivity
+                state.lastPointerX = x;
+            };
+            const onUp = () => {
+                state.isDragging = false;
+                setTimeout(() => { if(!state.isDragging) state.autoRotation = true; }, 1000);
+            };
+
+            container.addEventListener('mousedown', e => onDown(e.clientX));
+            window.addEventListener('mousemove', e => onMove(e.clientX));
+            window.addEventListener('mouseup', onUp);
+
+            container.addEventListener('touchstart', e => onDown(e.touches[0].clientX), {passive: false});
+            window.addEventListener('touchmove', e => onMove(e.touches[0].clientX), {passive: false});
+            window.addEventListener('touchend', onUp);
+
+            // Click on candle to light
+            const raycaster = new THREE.Raycaster();
+            const pointer = new THREE.Vector2();
+            container.addEventListener('click', (event) => {
+                // Calculate mouse position in normalized device coordinates
+                pointer.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+                pointer.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+                raycaster.setFromCamera( pointer, camera );
+                const intersects = raycaster.intersectObjects( scene.children, true );
+                
+                for(let hit of intersects) {
+                    if(hit.object.name === "candle_hitbox" || hit.object === wickMesh || hit.object === flameMesh) {
+                        toggleLight();
+                        break;
+                    }
+                }
+            });
+            
+            document.getElementById('btn-light').addEventListener('click', toggleLight);
         }
-    } else if (seed === 3) { // Spice: Starburst
-        for(let i=0; i<16; i++) {
-            const a = (i/16)*Math.PI*2;
-            ctx.moveTo(cx, cy);
-            ctx.lineTo(cx + Math.cos(a)*280, cy + Math.sin(a)*400);
+
+        function setupUI() {
+            const nav = document.getElementById('chapter-nav');
+            CONFIG.chapters.forEach((chap, idx) => {
+                const div = document.createElement('div');
+                div.className = 'nav-item' + (idx === 0 ? ' selected' : '');
+                div.innerHTML = `<div class="nav-dot"></div><span class="nav-label">${chap.name}</span>`;
+                div.onclick = () => {
+                    if(state.currentChapterIndex === idx) return;
+                    loadChapter(idx);
+                };
+                nav.appendChild(div);
+            });
         }
-    } else { // Iris: Abstract
-        for(let i=0; i<20; i++) {
-            ctx.beginPath();
-            ctx.arc(cx + (Math.random()-0.5)*500, cy + (Math.random()-0.5)*800, 20 + Math.random()*40, 0, Math.PI*2);
-            ctx.fill();
+
+        function updateUI(index) {
+            const navItems = document.querySelectorAll('.nav-item');
+            navItems.forEach((el, i) => {
+                if(i === index) el.classList.add('selected');
+                else el.classList.remove('selected');
+            });
+
+            const titleEl = document.getElementById('chapter-text');
+            const nameEl = document.getElementById('chap-name');
+            const descEl = document.getElementById('chap-desc');
+
+            // Fade text out
+            titleEl.classList.remove('visible');
+            
+            setTimeout(() => {
+                nameEl.textContent = CONFIG.chapters[index].name;
+                descEl.textContent = CONFIG.chapters[index].desc;
+                titleEl.classList.add('visible');
+            }, 600);
         }
-    }
-    
-    ctx.stroke();
 
-    // Convert to texture
-    const tex = new THREE.CanvasTexture(canvas);
-    tex.colorSpace = THREE.SRGBColorSpace; // Treat alpha map as data, but here using as map too
-    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    return tex;
-}
-
-/**
- * INTERACTION SYSTEM
- */
-function createUI() {
-    const track = document.getElementById('chapters-track');
-    
-    CONFIG.chapters.forEach((chap, idx) => {
-        const card = document.createElement('div');
-        card.className = `chapter-card ${idx === 0 ? 'active' : ''}`;
-        card.innerHTML = `
-            <div class="card-title">${chap.name}</div>
-            <div class="card-mood">${chap.mood}</div>
-            <div class="card-notes">${chap.notes}</div>
-        `;
-        card.onclick = () => changeChapter(idx, card);
-        track.appendChild(card);
-    });
-
-    // Light Button
-    const lightBtn = document.getElementById('btn-light');
-    lightBtn.onclick = toggleLight;
-
-    // Pause Button
-    document.getElementById('btn-pause').onclick = () => {
-        STATE.isPaused = !STATE.isPaused;
-    };
-}
-
-function changeChapter(index, cardElement) {
-    if (index === STATE.chapterIndex) return;
-    
-    // UI Update
-    document.querySelectorAll('.chapter-card').forEach(c => c.classList.remove('active'));
-    cardElement.classList.add('active');
-    
-    // Logic Update
-    STATE.chapterIndex = index;
-    const config = CONFIG.chapters[index];
-
-    // 1. Generate new pattern
-    const newTex = generateCharmTexture(config.patternSeed);
-    
-    // 2. Update Charms (Instant swap preferred for performance in this architecture)
-    charms.forEach(charm => {
-        charm.material.map = newTex;
-        charm.material.alphaMap = newTex;
-        charm.customDepthMaterial.map = newTex;
-        charm.material.needsUpdate = true;
-    });
-
-    // 3. Update Light Color
-    const targetColor = new THREE.Color(config.lightColor);
-    // Tween color manually in animate loop or using a simple lerp logic
-    // For simplicity, direct set with small transition logic in animate
-    wickLight.color.setHex(config.lightColor);
-}
-
-function toggleLight() {
-    STATE.isLit = !STATE.isLit;
-    const btn = document.getElementById('btn-light');
-    
-    if (STATE.isLit) {
-        btn.innerText = "EXTINGUISH";
-        flameMesh.visible = true;
-    } else {
-        btn.innerText = "LIGHT";
-        // Do not hide mesh immediately, wait for scale down in animate
-    }
-}
-
-function attachEvents() {
-    const canvas = renderer.domElement;
-
-    // Drag Logic
-    const onDown = (x) => {
-        STATE.isDragging = true;
-        STATE.lastMouseX = x;
-        STATE.velocity = 0;
-    };
-    
-    const onMove = (x) => {
-        if (!STATE.isDragging) return;
-        const delta = x - STATE.lastMouseX;
-        STATE.lastMouseX = x;
-        STATE.rotationY += delta * CONFIG.rotation.dragFactor;
-        STATE.velocity = delta * CONFIG.rotation.dragFactor;
-    };
-    
-    const onUp = () => {
-        STATE.isDragging = false;
-    };
-
-    // Mouse
-    canvas.addEventListener('mousedown', e => onDown(e.clientX));
-    window.addEventListener('mousemove', e => onMove(e.clientX));
-    window.addEventListener('mouseup', onUp);
-
-    // Touch
-    canvas.addEventListener('touchstart', e => onDown(e.touches[0].clientX), {passive: false});
-    window.addEventListener('touchmove', e => onMove(e.touches[0].clientX), {passive: false});
-    window.addEventListener('touchend', onUp);
-    
-    // Resize
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        composer.setSize(window.innerWidth, window.innerHeight);
-    });
-}
-
-/**
- * ANIMATION LOOP
- */
-function animate() {
-    requestAnimationFrame(animate);
-    
-    const delta = clock.getDelta();
-    STATE.time += delta;
-
-    // 1. Flame & Light Logic
-    if (STATE.isLit) {
-        // Flicker intensity
-        const flicker = Math.sin(STATE.time * CONFIG.flame.flickerSpeed) * 0.1 + 0.9 + (Math.random() * 0.1);
-        const targetInt = CONFIG.flame.baseIntensity * flicker;
-        wickLight.power += (targetInt - wickLight.power) * 0.1; // Smooth
-        
-        // Update Shader
-        if (flameMesh) {
-            flameMesh.visible = true;
-            flameMesh.material.uniforms.uTime.value = STATE.time;
-            flameMesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+            // Mobile Optimization on resize
+            if(window.innerWidth < 600) {
+                renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+            }
         }
-    } else {
-        wickLight.power += (0 - wickLight.power) * 0.05;
-        if (flameMesh) {
-            flameMesh.scale.lerp(new THREE.Vector3(0, 0, 0), 0.1);
-            if (flameMesh.scale.y < 0.05) flameMesh.visible = false;
+
+        // --- ANIMATION LOOP ---
+
+        function animate(t) {
+            requestAnimationFrame(animate);
+
+            const dt = clock.getDelta();
+            state.time += dt;
+
+            // 1. Rotation Logic
+            if(state.isLit && state.autoRotation && !state.isDragging) {
+                // Accelerate to target speed
+                state.rotationVelocity += (CONFIG.rotationSpeed - state.rotationVelocity) * 0.05;
+            } else if (!state.isLit && !state.isDragging) {
+                // Decelerate to stop
+                state.rotationVelocity *= 0.95;
+            }
+            
+            // Inertia decay if not dragging but moving fast
+            if (!state.isDragging && !state.isLit && Math.abs(state.rotationVelocity) > 0.0001) {
+                state.rotationVelocity *= CONFIG.dragInertia;
+            }
+
+            // Apply rotation
+            if(carouselGroup) {
+                carouselGroup.rotation.y += state.rotationVelocity;
+                
+                // Subtle wobbling of charms based on rotation speed
+                if(charmsGroup) {
+                    const wobble = Math.sin(state.time * 3) * (state.rotationVelocity * 20);
+                    // Scale animation (pop-in)
+                    const s = THREE.MathUtils.lerp(charmsGroup.scale.x, state.targetScale || 1, 0.1);
+                    charmsGroup.scale.set(s,s,s);
+                    
+                    // Sway charms
+                    charmsGroup.children.forEach((child, i) => {
+                        if(child.geometry.type === 'ExtrudeGeometry') { // Identify charms
+                             // Sway logic
+                             child.rotation.z = wobble * 0.5;
+                        }
+                    });
+                }
+            }
+
+            // 2. Flame & Light Animation
+            if(flameMesh && flameLight) {
+                const targetIntensity = state.isLit ? 1.5 : 0;
+                const currentIntensity = THREE.MathUtils.lerp(flameLight.intensity, targetIntensity, 0.05);
+                flameLight.intensity = currentIntensity;
+
+                // Opacity of flame mesh
+                const targetOpacity = state.isLit ? 1.0 : 0.0;
+                flameMesh.material.uniforms.uOpacity.value = THREE.MathUtils.lerp(flameMesh.material.uniforms.uOpacity.value, targetOpacity, 0.1);
+
+                if(state.isLit) {
+                    flameMesh.material.uniforms.uTime.value = state.time;
+                    
+                    // Light flicker
+                    const flicker = 1.0 + (Math.random() - 0.5) * 0.1;
+                    flameLight.intensity = currentIntensity * flicker;
+                    
+                    // Light Color morphing based on chapter
+                    const targetColor = new THREE.Color(CONFIG.chapters[state.currentChapterIndex].color);
+                    // We blend the flame color with the chapter color for the light
+                    const mixedColor = new THREE.Color(0xffa95c).lerp(targetColor, 0.3);
+                    flameLight.color.lerp(mixedColor, 0.05);
+                } else {
+                    flameMesh.visible = flameMesh.material.uniforms.uOpacity.value > 0.01;
+                }
+            }
+
+            // Render
+            composer.render();
         }
-    }
 
-    // 2. Carousel Rotation
-    if (!STATE.isDragging && !STATE.isPaused) {
-        // Target speed (only if lit, else stops)
-        const targetSpeed = STATE.isLit ? CONFIG.rotation.baseSpeed * delta : 0;
-        
-        // Return to base speed via inertia
-        STATE.velocity += (targetSpeed - STATE.velocity) * CONFIG.rotation.returnLerp;
-    } else if (!STATE.isDragging && STATE.isPaused) {
-        STATE.velocity *= CONFIG.rotation.damping;
-    }
-    
-    // Apply inertia damping when releasing drag
-    if (!STATE.isDragging && Math.abs(STATE.velocity) > CONFIG.rotation.baseSpeed * delta) {
-        STATE.velocity *= CONFIG.rotation.damping;
-    }
+        // Start
+        init();
 
-    STATE.rotationY += STATE.velocity;
-    if (carouselGroup) {
-        carouselGroup.rotation.y = STATE.rotationY;
-        
-        // Subtle tilt wobble
-        carouselGroup.rotation.z = Math.sin(STATE.time * 0.5) * 0.02;
-        carouselGroup.rotation.x = Math.cos(STATE.time * 0.3) * 0.02;
-    }
-
-    // 3. Render
-    composer.render();
-}
-
-// Start
-init();
+    </script>
+</body>
+</html>
