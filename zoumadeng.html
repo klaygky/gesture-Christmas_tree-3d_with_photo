@@ -1,200 +1,593 @@
-/* RESET & VARS */
-:root {
-    --c-text: #eae0d5;
-    --c-accent: #d4af37; /* Gold */
-    --c-ui-bg: rgba(20, 20, 20, 0.4);
-    --font-serif: 'Times New Roman', Times, serif;
-    --font-sans: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-    --ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+/**
+ * CONFIGURATION
+ * Centralized settings for easy tuning.
+ */
+const CONFIG = {
+    chapters: [
+        { name: "Rose Nocturne", mood: "Velvet shadows", notes: "Rose / Patchouli / Oud", lightColor: 0xffdcb1, patternSeed: 0 },
+        { name: "Amber Lace", mood: "Golden hour", notes: "Amber / Vanilla / Musk", lightColor: 0xffeebb, patternSeed: 1 },
+        { name: "Verde Figuier", mood: "Morning dew", notes: "Fig / Cedar / Green", lightColor: 0xeefce6, patternSeed: 2 },
+        { name: "Spice Route", mood: "Warm bazaar", notes: "Cinnamon / Ginger / Wood", lightColor: 0xffcfa0, patternSeed: 3 },
+        { name: "Lunar Iris", mood: "Cold elegance", notes: "Iris / Violet / Leather", lightColor: 0xeef4ff, patternSeed: 4 }
+    ],
+    rotation: { baseSpeed: Math.PI / 14, dragFactor: 0.005, damping: 0.95, returnLerp: 0.02 },
+    shadows: {
+        mapSize: window.innerWidth < 768 ? 1024 : 2048,
+        bias: -0.0001, 
+        radius: 4, 
+        blur: 2 // VSM blur
+    },
+    bloom: { strength: 0.35, radius: 0.4, threshold: 0.85 },
+    flame: { flickerSpeed: 8.0, baseIntensity: 45 },
+    camera: { pos: new THREE.Vector3(0, 1.25, 5.5), lookAt: new THREE.Vector3(0, 0.9, 0) }
+};
+
+/**
+ * STATE MANAGEMENT
+ */
+const STATE = {
+    isLit: true,
+    isPaused: false,
+    chapterIndex: 0,
+    rotationY: 0,
+    velocity: 0,
+    isDragging: false,
+    lastMouseX: 0,
+    time: 0
+};
+
+// --- GLOBALS ---
+let scene, camera, renderer, composer;
+let candleGroup, carouselGroup, flameMesh, wickLight, backdrop;
+let charms = []; // Array of mesh references
+const clock = new THREE.Clock();
+
+/**
+ * INITIALIZATION
+ */
+function init() {
+    const container = document.getElementById('canvas-container');
+
+    // 1. Scene & Camera
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050505);
+    scene.fog = new THREE.FogExp2(0x050505, 0.08); // Deep atmosphere
+
+    camera = new THREE.PerspectiveCamera(38, window.innerWidth / window.innerHeight, 0.1, 20);
+    camera.position.copy(CONFIG.camera.pos);
+    camera.lookAt(CONFIG.camera.lookAt);
+
+    // 2. Renderer
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: "high-performance" });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.VSMShadowMap; // Soft shadows
+    container.appendChild(renderer.domElement);
+
+    // 3. Post-Processing
+    const renderScene = new RenderPass(scene, camera);
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 1.5, 0.4, 0.85);
+    bloomPass.strength = CONFIG.bloom.strength;
+    bloomPass.radius = CONFIG.bloom.radius;
+    bloomPass.threshold = CONFIG.bloom.threshold;
+
+    composer = new EffectComposer(renderer);
+    composer.addPass(renderScene);
+    composer.addPass(bloomPass);
+
+    // 4. Build Scene
+    createLighting();
+    createBackdrop();
+    createCandle();
+    createCarousel();
+
+    // 5. UI & Events
+    createUI();
+    attachEvents();
+
+    // Remove Loader
+    document.getElementById('loader').style.opacity = 0;
+
+    // Start Loop
+    animate();
 }
 
-* { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+/**
+ * SCENE BUILDERS
+ */
+function createLighting() {
+    // Ambient fill
+    const ambient = new THREE.HemisphereLight(0xffffff, 0x000000, 0.15);
+    scene.add(ambient);
 
-body {
-    background: #050505;
-    color: var(--c-text);
-    font-family: var(--font-sans);
-    overflow: hidden;
-    height: 100vh;
-    width: 100vw;
+    // Rim light (Back)
+    const rim = new THREE.DirectionalLight(0xffffff, 0.2);
+    rim.position.set(0, 2, -5);
+    scene.add(rim);
+
+    // HERO LIGHT: The Flame
+    wickLight = new THREE.PointLight(CONFIG.chapters[0].lightColor, 0, 10);
+    wickLight.position.set(0, 0.65, 0); // Just above wick
+    wickLight.castShadow = true;
+    wickLight.shadow.mapSize.width = CONFIG.shadows.mapSize;
+    wickLight.shadow.mapSize.height = CONFIG.shadows.mapSize;
+    wickLight.shadow.bias = CONFIG.shadows.bias;
+    wickLight.shadow.radius = CONFIG.shadows.radius;
+    wickLight.shadow.blurSamples = 8; // VSM specific
+    
+    // Physical light unit approx
+    wickLight.power = 0; // Starts off
+    
+    scene.add(wickLight);
 }
 
-/* NOISE OVERLAY (Base64 for pure CSS solution) */
-body::after {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none;
-    z-index: 999;
-    opacity: 0.04;
-    background-image: url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIj48ZmlsdGVyIGlkPSJnoiPjxmZVR1cmJ1bGVuY2UgdHlwZT0iZnJhY3RhbE5vaXNlIiBiYXNlRnJlcXVlbmN5PSIwLjY1IiAvPjwvZmlsdGVyPjxyZWN0IHdpZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbHRlcj0idXJsKCNnKSIgb3BhY2l0eT0iMSIvPjwvc3ZnPg==');
+function createBackdrop() {
+    // Curved wall behind
+    const geo = new THREE.CylinderGeometry(6, 6, 5, 64, 1, true, Math.PI, Math.PI); 
+    // Theta adjusted to face camera: rotate geometry
+    geo.rotateY(-Math.PI / 2);
+
+    const mat = new THREE.MeshStandardMaterial({
+        color: 0xeeeeee,
+        roughness: 0.9,
+        metalness: 0,
+        side: THREE.BackSide // Inside of cylinder
+    });
+
+    backdrop = new THREE.Mesh(geo, mat);
+    backdrop.position.set(0, 1.0, -1.8);
+    backdrop.receiveShadow = true;
+    scene.add(backdrop);
 }
 
-/* VIGNETTE */
-body::before {
-    content: "";
-    position: absolute;
-    top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none;
-    z-index: 998;
-    background: radial-gradient(circle at center, transparent 40%, rgba(0,0,0,0.6) 100%);
+function createCandle() {
+    candleGroup = new THREE.Group();
+
+    // 1. Glass Jar
+    const jarGeo = new THREE.CylinderGeometry(0.75, 0.75, 1.1, 48);
+    const jarMat = new THREE.MeshPhysicalMaterial({
+        color: 0xfffcf0,
+        transmission: 0.9, // Glass
+        opacity: 1,
+        metalness: 0,
+        roughness: 0.15,
+        ior: 1.5,
+        thickness: 0.1,
+        specularIntensity: 1,
+        transparent: true,
+        side: THREE.DoubleSide
+    });
+    const jar = new THREE.Mesh(jarGeo, jarMat);
+    jar.position.y = 0.55;
+    jar.castShadow = false;
+    jar.receiveShadow = true; // Shadows on glass look nice
+    candleGroup.add(jar);
+
+    // 2. Wax
+    const waxGeo = new THREE.CylinderGeometry(0.68, 0.68, 0.75, 32);
+    const waxMat = new THREE.MeshStandardMaterial({
+        color: 0xfaf5e6, // Warm ivory
+        roughness: 0.3,
+        metalness: 0.0
+    });
+    const wax = new THREE.Mesh(waxGeo, waxMat);
+    wax.position.y = 0.4; // Inside jar
+    wax.receiveShadow = true;
+    candleGroup.add(wax);
+
+    // 3. Wick
+    const wickGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.15, 8);
+    const wickMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+    const wick = new THREE.Mesh(wickGeo, wickMat);
+    wick.position.y = 0.75 + 0.075;
+    wick.castShadow = true;
+    candleGroup.add(wick);
+
+    // 4. Flame (Shader)
+    const flameGeo = new THREE.PlaneGeometry(0.18, 0.35);
+    // Move anchor to bottom
+    flameGeo.translate(0, 0.175, 0); 
+    
+    const flameMat = new THREE.ShaderMaterial({
+        uniforms: {
+            uTime: { value: 0 },
+            uColorCore: { value: new THREE.Color(0xfffeba) },
+            uColorTop: { value: new THREE.Color(0xffa24c) }
+        },
+        vertexShader: `
+            uniform float uTime;
+            varying vec2 vUv;
+            void main() {
+                vUv = uv;
+                vec3 pos = position;
+                // Billboard
+                vec4 mvPosition = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+                
+                // Wind/Flicker effect
+                float n = sin(uTime * 10.0 + pos.y * 10.0) * 0.02 * pos.y;
+                pos.x += n;
+                
+                // Scale based on distance to keep size constant-ish or just billboard
+                gl_Position = projectionMatrix * (mvPosition + vec4(pos.x, pos.y, 0.0, 0.0));
+            }
+        `,
+        fragmentShader: `
+            uniform float uTime;
+            uniform vec3 uColorCore;
+            uniform vec3 uColorTop;
+            varying vec2 vUv;
+            
+            // Simple noise
+            float random(vec2 st) { return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123); }
+
+            void main() {
+                // Shape: Teardrop
+                float x = vUv.x * 2.0 - 1.0;
+                float y = vUv.y;
+                float shape = 1.0 - length(vec2(x, (y - 0.2) * 1.5));
+                
+                // Noise texture
+                float noise = random(vUv * vec2(10.0, 50.0) + uTime);
+                
+                // Gradient
+                vec3 color = mix(uColorCore, uColorTop, y * 1.5);
+                
+                // Alpha fade
+                float alpha = smoothstep(0.0, 0.1, shape) * (1.0 - y*0.1);
+                
+                // Flicker modulation
+                float flicker = 0.8 + 0.2 * sin(uTime * 20.0);
+                
+                if (alpha < 0.01) discard;
+                
+                gl_FragColor = vec4(color * flicker * 2.0, alpha); // *2.0 for bloom
+            }
+        `,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+    });
+
+    flameMesh = new THREE.Mesh(flameGeo, flameMat);
+    flameMesh.position.y = 0.82;
+    flameMesh.visible = STATE.isLit;
+    candleGroup.add(flameMesh);
+
+    scene.add(candleGroup);
 }
 
-#canvas-container {
-    position: fixed;
-    top: 0; left: 0;
-    width: 100%; height: 100%;
-    z-index: 0;
+function createCarousel() {
+    carouselGroup = new THREE.Group();
+    carouselGroup.position.y = 1.55;
+    
+    // Gold Material
+    const goldMat = new THREE.MeshPhysicalMaterial({
+        color: 0xffd700,
+        metalness: 1.0,
+        roughness: 0.25,
+        clearcoat: 0.5,
+        clearcoatRoughness: 0.1
+    });
+
+    // 1. Top Ring
+    const ringGeo = new THREE.TorusGeometry(1.05, 0.04, 16, 64);
+    ringGeo.rotateX(Math.PI / 2);
+    const ring = new THREE.Mesh(ringGeo, goldMat);
+    ring.castShadow = true;
+    carouselGroup.add(ring);
+
+    // 2. Charms
+    const count = 5;
+    const radius = 1.05;
+
+    for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2;
+        
+        // Pivot point for the charm
+        const pivot = new THREE.Group();
+        pivot.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+        // Rotate pivot so charm faces center (or tangent)
+        pivot.rotation.y = -angle + Math.PI / 2;
+        
+        // Rod
+        const rodGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.4);
+        const rod = new THREE.Mesh(rodGeo, goldMat);
+        rod.position.y = -0.2;
+        pivot.add(rod);
+
+        // The Charm (Procedural Texture)
+        const w = 0.5, h = 0.7;
+        const charmGeo = new THREE.PlaneGeometry(w, h);
+        
+        // Generate texture for current chapter
+        const texture = generateCharmTexture(CONFIG.chapters[0].patternSeed);
+        
+        const charmMat = new THREE.MeshStandardMaterial({
+            color: 0xffd700,
+            metalness: 0.9,
+            roughness: 0.3,
+            map: texture,
+            alphaMap: texture,
+            transparent: true,
+            alphaTest: 0.4, // CRITICAL for shadows
+            side: THREE.DoubleSide,
+        });
+
+        const charm = new THREE.Mesh(charmGeo, charmMat);
+        
+        // CRITICAL: Custom Depth Material for accurate shadow casting through alpha
+        charm.customDepthMaterial = new THREE.MeshDepthMaterial({
+            depthPacking: THREE.RGBADepthPacking,
+            map: texture,
+            alphaTest: 0.4
+        });
+
+        charm.position.y = -0.6; // Below rod
+        pivot.add(charm);
+        
+        charms.push(charm); // Store ref to update texture later
+        carouselGroup.add(pivot);
+    }
+
+    scene.add(carouselGroup);
 }
 
-/* UI LAYER */
-.ui-layer {
-    position: relative;
-    z-index: 10;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 2rem;
-    pointer-events: none; /* Let clicks pass to canvas */
+/**
+ * PROCEDURAL ASSETS
+ */
+function generateCharmTexture(seed) {
+    const size = 1024;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+
+    // Clear transparent
+    ctx.clearRect(0, 0, size, size);
+
+    // Helpers
+    const cx = size / 2;
+    const cy = size / 2;
+    
+    ctx.fillStyle = '#FFFFFF';
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 20;
+    ctx.lineCap = 'round';
+
+    // 1. Oval Border (Always present)
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 300, 450, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 2. Pattern based on Seed
+    ctx.beginPath();
+    
+    if (seed === 0) { // Rose: Swirls
+        for(let i=0; i<8; i++) {
+            const rad = 200;
+            const a = (i/8)*Math.PI*2;
+            const x = cx + Math.cos(a)*rad;
+            const y = cy + Math.sin(a)*rad;
+            ctx.moveTo(cx, cy);
+            ctx.quadraticCurveTo(x, y, x + Math.random()*50, y + Math.random()*50);
+        }
+    } else if (seed === 1) { // Amber: Lace/Grid
+        ctx.lineWidth = 10;
+        for(let x=cx-300; x<cx+300; x+=60) {
+            ctx.moveTo(x, cy-450); ctx.lineTo(x, cy+450);
+        }
+        for(let y=cy-450; y<cy+450; y+=60) {
+            ctx.moveTo(cx-300, y); ctx.lineTo(cx+300, y);
+        }
+    } else if (seed === 2) { // Figuier: Leaf veins
+        ctx.moveTo(cx, cy+450); ctx.lineTo(cx, cy-450); // Spine
+        for(let i=0; i<10; i++) {
+            const y = (cy-400) + i*80;
+            ctx.moveTo(cx, y); ctx.lineTo(cx-250, y-100);
+            ctx.moveTo(cx, y); ctx.lineTo(cx+250, y-100);
+        }
+    } else if (seed === 3) { // Spice: Starburst
+        for(let i=0; i<16; i++) {
+            const a = (i/16)*Math.PI*2;
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + Math.cos(a)*280, cy + Math.sin(a)*400);
+        }
+    } else { // Iris: Abstract
+        for(let i=0; i<20; i++) {
+            ctx.beginPath();
+            ctx.arc(cx + (Math.random()-0.5)*500, cy + (Math.random()-0.5)*800, 20 + Math.random()*40, 0, Math.PI*2);
+            ctx.fill();
+        }
+    }
+    
+    ctx.stroke();
+
+    // Convert to texture
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace; // Treat alpha map as data, but here using as map too
+    tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
 }
 
-/* HEADER */
-.header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    pointer-events: auto;
+/**
+ * INTERACTION SYSTEM
+ */
+function createUI() {
+    const track = document.getElementById('chapters-track');
+    
+    CONFIG.chapters.forEach((chap, idx) => {
+        const card = document.createElement('div');
+        card.className = `chapter-card ${idx === 0 ? 'active' : ''}`;
+        card.innerHTML = `
+            <div class="card-title">${chap.name}</div>
+            <div class="card-mood">${chap.mood}</div>
+            <div class="card-notes">${chap.notes}</div>
+        `;
+        card.onclick = () => changeChapter(idx, card);
+        track.appendChild(card);
+    });
+
+    // Light Button
+    const lightBtn = document.getElementById('btn-light');
+    lightBtn.onclick = toggleLight;
+
+    // Pause Button
+    document.getElementById('btn-pause').onclick = () => {
+        STATE.isPaused = !STATE.isPaused;
+    };
 }
 
-.brand {
-    font-family: var(--font-serif);
-    font-size: 1.1rem;
-    letter-spacing: 0.2rem;
-    text-transform: uppercase;
-    color: var(--c-text);
-    text-shadow: 0 2px 10px rgba(0,0,0,0.5);
+function changeChapter(index, cardElement) {
+    if (index === STATE.chapterIndex) return;
+    
+    // UI Update
+    document.querySelectorAll('.chapter-card').forEach(c => c.classList.remove('active'));
+    cardElement.classList.add('active');
+    
+    // Logic Update
+    STATE.chapterIndex = index;
+    const config = CONFIG.chapters[index];
+
+    // 1. Generate new pattern
+    const newTex = generateCharmTexture(config.patternSeed);
+    
+    // 2. Update Charms (Instant swap preferred for performance in this architecture)
+    charms.forEach(charm => {
+        charm.material.map = newTex;
+        charm.material.alphaMap = newTex;
+        charm.customDepthMaterial.map = newTex;
+        charm.material.needsUpdate = true;
+    });
+
+    // 3. Update Light Color
+    const targetColor = new THREE.Color(config.lightColor);
+    // Tween color manually in animate loop or using a simple lerp logic
+    // For simplicity, direct set with small transition logic in animate
+    wickLight.color.setHex(config.lightColor);
 }
 
-.controls {
-    display: flex;
-    gap: 1rem;
+function toggleLight() {
+    STATE.isLit = !STATE.isLit;
+    const btn = document.getElementById('btn-light');
+    
+    if (STATE.isLit) {
+        btn.innerText = "EXTINGUISH";
+        flameMesh.visible = true;
+    } else {
+        btn.innerText = "LIGHT";
+        // Do not hide mesh immediately, wait for scale down in animate
+    }
 }
 
-.btn-icon {
-    background: transparent;
-    border: 1px solid rgba(255,255,255,0.2);
-    color: var(--c-text);
-    width: 40px; height: 40px;
-    border-radius: 50%;
-    cursor: pointer;
-    font-family: var(--font-serif);
-    transition: all 0.3s var(--ease-out);
-    display: flex;
-    align-items: center;
-    justify-content: center;
+function attachEvents() {
+    const canvas = renderer.domElement;
+
+    // Drag Logic
+    const onDown = (x) => {
+        STATE.isDragging = true;
+        STATE.lastMouseX = x;
+        STATE.velocity = 0;
+    };
+    
+    const onMove = (x) => {
+        if (!STATE.isDragging) return;
+        const delta = x - STATE.lastMouseX;
+        STATE.lastMouseX = x;
+        STATE.rotationY += delta * CONFIG.rotation.dragFactor;
+        STATE.velocity = delta * CONFIG.rotation.dragFactor;
+    };
+    
+    const onUp = () => {
+        STATE.isDragging = false;
+    };
+
+    // Mouse
+    canvas.addEventListener('mousedown', e => onDown(e.clientX));
+    window.addEventListener('mousemove', e => onMove(e.clientX));
+    window.addEventListener('mouseup', onUp);
+
+    // Touch
+    canvas.addEventListener('touchstart', e => onDown(e.touches[0].clientX), {passive: false});
+    window.addEventListener('touchmove', e => onMove(e.touches[0].clientX), {passive: false});
+    window.addEventListener('touchend', onUp);
+    
+    // Resize
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        composer.setSize(window.innerWidth, window.innerHeight);
+    });
 }
 
-.btn-icon:hover {
-    background: rgba(255,255,255,0.1);
-    border-color: var(--c-text);
+/**
+ * ANIMATION LOOP
+ */
+function animate() {
+    requestAnimationFrame(animate);
+    
+    const delta = clock.getDelta();
+    STATE.time += delta;
+
+    // 1. Flame & Light Logic
+    if (STATE.isLit) {
+        // Flicker intensity
+        const flicker = Math.sin(STATE.time * CONFIG.flame.flickerSpeed) * 0.1 + 0.9 + (Math.random() * 0.1);
+        const targetInt = CONFIG.flame.baseIntensity * flicker;
+        wickLight.power += (targetInt - wickLight.power) * 0.1; // Smooth
+        
+        // Update Shader
+        if (flameMesh) {
+            flameMesh.visible = true;
+            flameMesh.material.uniforms.uTime.value = STATE.time;
+            flameMesh.scale.lerp(new THREE.Vector3(1, 1, 1), 0.1);
+        }
+    } else {
+        wickLight.power += (0 - wickLight.power) * 0.05;
+        if (flameMesh) {
+            flameMesh.scale.lerp(new THREE.Vector3(0, 0, 0), 0.1);
+            if (flameMesh.scale.y < 0.05) flameMesh.visible = false;
+        }
+    }
+
+    // 2. Carousel Rotation
+    if (!STATE.isDragging && !STATE.isPaused) {
+        // Target speed (only if lit, else stops)
+        const targetSpeed = STATE.isLit ? CONFIG.rotation.baseSpeed * delta : 0;
+        
+        // Return to base speed via inertia
+        STATE.velocity += (targetSpeed - STATE.velocity) * CONFIG.rotation.returnLerp;
+    } else if (!STATE.isDragging && STATE.isPaused) {
+        STATE.velocity *= CONFIG.rotation.damping;
+    }
+    
+    // Apply inertia damping when releasing drag
+    if (!STATE.isDragging && Math.abs(STATE.velocity) > CONFIG.rotation.baseSpeed * delta) {
+        STATE.velocity *= CONFIG.rotation.damping;
+    }
+
+    STATE.rotationY += STATE.velocity;
+    if (carouselGroup) {
+        carouselGroup.rotation.y = STATE.rotationY;
+        
+        // Subtle tilt wobble
+        carouselGroup.rotation.z = Math.sin(STATE.time * 0.5) * 0.02;
+        carouselGroup.rotation.x = Math.cos(STATE.time * 0.3) * 0.02;
+    }
+
+    // 3. Render
+    composer.render();
 }
 
-.btn-icon.active {
-    background: var(--c-text);
-    color: #000;
-}
-
-/* FOOTER / CAROUSEL */
-.footer {
-    pointer-events: auto;
-    width: 100%;
-    overflow: hidden;
-    padding-bottom: 1rem;
-}
-
-.chapter-scroller {
-    display: flex;
-    gap: 2rem;
-    overflow-x: auto;
-    padding: 1rem 0;
-    scroll-behavior: smooth;
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-}
-
-.chapter-scroller::-webkit-scrollbar { display: none; }
-
-.chapter-card {
-    min-width: 200px;
-    padding: 1rem;
-    background: rgba(20,20,20,0.6);
-    border: 1px solid rgba(255,255,255,0.1);
-    backdrop-filter: blur(5px);
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.3s var(--ease-out);
-    opacity: 0.6;
-    transform: translateY(0);
-}
-
-.chapter-card.active {
-    opacity: 1;
-    border-color: var(--c-accent);
-    background: rgba(40,40,40,0.8);
-    transform: translateY(-5px);
-}
-
-.card-title {
-    font-family: var(--font-serif);
-    font-size: 1.2rem;
-    margin-bottom: 0.4rem;
-    color: var(--c-text);
-}
-
-.card-mood {
-    font-size: 0.8rem;
-    font-style: italic;
-    color: #aaa;
-    margin-bottom: 0.8rem;
-}
-
-.card-notes {
-    font-size: 0.65rem;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: var(--c-accent);
-    opacity: 0.8;
-}
-
-/* HINT */
-.hint-overlay {
-    position: absolute;
-    top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 0.7rem;
-    letter-spacing: 2px;
-    opacity: 0;
-    animation: fadeInOut 4s forwards 1s;
-    text-align: center;
-}
-
-#fps-counter {
-    position: absolute;
-    bottom: 10px; right: 10px;
-    font-size: 10px;
-    opacity: 0.3;
-}
-
-@keyframes fadeInOut {
-    0% { opacity: 0; }
-    20% { opacity: 0.7; }
-    80% { opacity: 0.7; }
-    100% { opacity: 0; }
-}
-
-@media (max-width: 768px) {
-    .brand { font-size: 0.9rem; }
-    .chapter-card { min-width: 160px; }
-    .ui-layer { padding: 1.5rem 1rem; }
-}
+// Start
+init();
